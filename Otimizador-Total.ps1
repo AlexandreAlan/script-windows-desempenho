@@ -60,6 +60,9 @@ if (Test-Path $ArquivoBackupSvc) {
     } catch { }
 }
 
+# guarda o desempenho do INICIO para comparar depois (antes x depois)
+$Global:DesempenhoInicial = $null  # preenchido na 1a vez que o menu abre
+
 function Perguntar {
     param([string]$Texto)
     while ($true) {
@@ -69,6 +72,33 @@ function Perguntar {
             default { Write-Host "   Digite Y (sim) ou N (nao)." -ForegroundColor DarkGray }
         }
     }
+}
+
+# Mede o desempenho atual da maquina (RAM, processos, servicos ativos)
+function Medir-Desempenho {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $usoKB   = $os.TotalVisibleMemorySize - $os.FreePhysicalMemory
+    return [PSCustomObject]@{
+        RamUsoPct      = [math]::Round(($usoKB / $os.TotalVisibleMemorySize) * 100, 1)
+        RamLivreGB     = [math]::Round($os.FreePhysicalMemory / 1MB, 2)
+        Processos      = (Get-Process).Count
+        ServicosAtivos = (Get-Service | Where-Object { $_.Status -eq "Running" }).Count
+    }
+}
+
+# Mostra uma linha comparando dois valores com seta de melhora/piora
+function Linha-Comparacao {
+    param([string]$Rotulo,$Antes,$Depois,[string]$Sufixo="",[switch]$MenorMelhor)
+    $delta = [math]::Round($Depois - $Antes, 2)
+    if ($delta -eq 0) {
+        $cor = "Gray";  $seta = "="
+    } elseif ( ($MenorMelhor -and $delta -lt 0) -or (-not $MenorMelhor -and $delta -gt 0) ) {
+        $cor = "Green"; $seta = "v MELHOROU"
+    } else {
+        $cor = "Red";   $seta = "^ subiu"
+    }
+    $sinal = if ($delta -gt 0) { "+$delta" } else { "$delta" }
+    Write-Host ("   {0,-18} {1,8}{4}  ->  {2,8}{4}   ({3} {5})" -f $Rotulo, $Antes, $Depois, $sinal, $Sufixo, $seta) -ForegroundColor $cor
 }
 
 function Definir-Registro {
@@ -450,6 +480,28 @@ function Secao-Rede {
 }
 
 # ======================================================================
+#  SECAO 11 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
+# ======================================================================
+function Secao-Comparar {
+    Titulo-Secao "11) MELHORA DE DESEMPENHO (antes x depois)"
+    if (-not $Global:DesempenhoInicial) {
+        Write-Host "   Ainda nao ha medida inicial." -ForegroundColor DarkGray; return
+    }
+    $ini = $Global:DesempenhoInicial
+    $ag  = Medir-Desempenho
+
+    Write-Host "   Item                  ANTES         AGORA      resultado" -ForegroundColor White
+    Write-Host ("   " + ("-" * 58)) -ForegroundColor DarkCyan
+    Linha-Comparacao "RAM em uso"     $ini.RamUsoPct      $ag.RamUsoPct      "%"  -MenorMelhor
+    Linha-Comparacao "RAM livre"      $ini.RamLivreGB     $ag.RamLivreGB     "GB"
+    Linha-Comparacao "Processos"      $ini.Processos      $ag.Processos      ""   -MenorMelhor
+    Linha-Comparacao "Servicos ativos" $ini.ServicosAtivos $ag.ServicosAtivos ""  -MenorMelhor
+    Write-Host ""
+    Write-Host "   Menos processos/servicos e mais RAM livre = mais leve e rapido." -ForegroundColor Gray
+    Write-Host "   Dica: o ganho fica COMPLETO depois de REINICIAR o PC." -ForegroundColor Yellow
+}
+
+# ======================================================================
 #  SECAO 8 - RESTAURAR
 # ======================================================================
 function Secao-Restaurar {
@@ -518,9 +570,19 @@ function Ponto-Restauracao {
 # ======================================================================
 function Mostrar-Menu {
     Clear-Host
+    # mede agora e guarda o inicial na 1a vez
+    $agora = Medir-Desempenho
+    if (-not $Global:DesempenhoInicial) { $Global:DesempenhoInicial = $agora }
+    $ini = $Global:DesempenhoInicial
+
     Write-Host ""
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "          OTIMIZADOR TOTAL - WINDOWS 10 (leve e rapido)" -ForegroundColor White
+    Write-Host "  ==============================================================" -ForegroundColor Magenta
+    Write-Host ("   DESEMPENHO AGORA:  RAM em uso {0}%  | Livre {1} GB  | Processos {2}  | Servicos ativos {3}" -f `
+        $agora.RamUsoPct, $agora.RamLivreGB, $agora.Processos, $agora.ServicosAtivos) -ForegroundColor Cyan
+    Write-Host ("   No inicio:         RAM em uso {0}%  | Livre {1} GB  | Processos {2}  | Servicos ativos {3}" -f `
+        $ini.RamUsoPct, $ini.RamLivreGB, $ini.Processos, $ini.ServicosAtivos) -ForegroundColor DarkGray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   1 - Aparencia / efeitos visuais" -ForegroundColor Gray
     Write-Host "   2 - Limpeza (temporarios + lixeira)" -ForegroundColor Gray
@@ -530,6 +592,7 @@ function Mostrar-Menu {
     Write-Host "   6 - Remover apps inuteis (Candy Crush, etc.)" -ForegroundColor Gray
     Write-Host "   9 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
     Write-Host "  10 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
+    Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
     Write-Host "   7 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "   8 - RESTAURAR (desfazer servicos + inicializacao)" -ForegroundColor Yellow
     Write-Host "   0 - Sair" -ForegroundColor Gray
@@ -553,6 +616,7 @@ do {
         "6" { Secao-Bloatware; Pause }
         "9" { Secao-Disco; Pause }
         "10" { Secao-Rede; Pause }
+        "11" { Secao-Comparar; Pause }
         "7" {
             Ponto-Restauracao
             Secao-Aparencia
@@ -564,6 +628,7 @@ do {
             Secao-Disco
             Secao-Rede
             Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
+            Secao-Comparar
             Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
             Pause
         }

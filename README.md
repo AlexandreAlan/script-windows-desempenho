@@ -31,6 +31,7 @@ para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunt
 6 - Remover apps inuteis (Candy Crush, etc.)
 9 - Otimizar disco (HD/SSD automatico)
 10 - Ajustes de rede (DNS rapido + throttling)
+11 - Ver melhora de desempenho (antes x depois)
 7 - APLICAR TUDO (passa por todas as secoes)
 8 - RESTAURAR (desfazer servicos + inicializacao)
 0 - Sair
@@ -67,7 +68,12 @@ TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
 Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
 limpa o cache de DNS.
 
-**7) Aplicar tudo** — cria ponto de restauração e passa por todas as seções.
+**11) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
+uso, RAM livre, número de processos e serviços ativos), com setas indicando o
+que melhorou. O topo do menu também exibe esses números **em tempo real**.
+
+**7) Aplicar tudo** — cria ponto de restauração, passa por todas as seções e
+no final mostra automaticamente a comparação de desempenho.
 
 **8) Restaurar** — desfaz serviços e inicialização usando os backups.
 
