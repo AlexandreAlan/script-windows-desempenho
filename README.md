@@ -1,83 +1,77 @@
 # Script Windows Desempenho
 
-Otimizador interativo para **Windows 10** — deixa o sistema mais **leve e rápido**.
-Cada otimização pergunta **Y (sim)** ou **N (não)** antes de aplicar, então você
-tem controle total sobre o que muda.
+**Otimizador Total** para **Windows 10** — tudo em um único script, com menu,
+para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunta
+**Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**.
 
 ## Arquivos
 
 | Arquivo | Função |
 |---|---|
-| `Otimizar-Windows10.ps1` | Script principal (aparência, limpeza, inicialização) |
-| `Otimizar-Windows10.bat` | Duplo-clique → abre o script já como **Administrador** |
-| `Restaurar-Inicializacao.ps1` | Reverte os programas de inicialização que você desativou |
-| `Otimizar-Servicos.ps1` | **Reduz processos/serviços** em segundo plano (modo leve) |
-| `Otimizar-Servicos.bat` | Duplo-clique → abre o de serviços como **Administrador** |
-| `Restaurar-Servicos.ps1` | Reverte os serviços desativados (lê o backup salvo) |
+| `Otimizador-Total.ps1` | **O script completo** (menu com tudo) |
+| `Otimizador-Total.bat` | Duplo-clique → abre já como **Administrador** |
+
+> O backup dos serviços fica em `backup-servicos.json` e o da inicialização no
+> registro — ambos usados pela opção **8 (Restaurar)**.
 
 ## Como usar
 
-1. Baixe os arquivos para o seu PC com Windows 10.
-2. Dê **duplo-clique em `Otimizar-Windows10.bat`** e aceite o aviso de
-   Controle de Conta de Usuário (UAC).
-3. Para cada item, digite **Y** para aplicar ou **N** para pular.
+1. Baixe `Otimizador-Total.ps1` e `Otimizador-Total.bat` para o seu PC.
+2. Dê **duplo-clique em `Otimizador-Total.bat`** e aceite o aviso (UAC).
+3. Escolha uma opção do menu. Em cada item, digite **Y** ou **N**.
 
-> Dica: o script oferece criar um **ponto de restauração** logo no início.
-> Recomendado aceitar para poder desfazer tudo se precisar.
+## Menu
 
-## O que ele faz (tudo opcional, item por item)
+```
+1 - Aparencia / efeitos visuais
+2 - Limpeza (temporarios + lixeira)
+3 - Programas de inicializacao (startup)
+4 - Servicos / processos em segundo plano
+5 - Tarefas agendadas (telemetria)
+6 - Remover apps inuteis (Candy Crush, etc.)
+7 - APLICAR TUDO (passa por todas as secoes)
+8 - RESTAURAR (desfazer servicos + inicializacao)
+0 - Sair
+```
 
-**Aparência / efeitos visuais**
-- Ajustar para melhor desempenho (desliga efeitos visuais em massa)
-- Desativar animações de janelas (minimizar/maximizar)
-- Desativar transparência da barra de tarefas / menu Iniciar
-- Desativar sombras e Aero Peek
-- Mostrar só o contorno ao arrastar janelas
-- Menus instantâneos (sem delay/fade)
-- Desativar animações da barra de tarefas
-- Desativar dicas, sugestões e propaganda do Windows
-- Menu Iniciar sem animação
+## O que cada seção faz
 
-**Desempenho**
-- Plano de energia em Alto Desempenho
-- Reinicia o Explorer para aplicar as mudanças
+**1) Aparência** — melhor desempenho, sem animações, sem transparência, sem
+sombras, menus instantâneos, plano de energia Alto Desempenho.
 
-**Limpeza**
-- Limpa arquivos temporários (Temp / Prefetch / cache) e mostra os MB liberados
-- Esvazia a Lixeira
+**2) Limpeza** — apaga Temp/Prefetch/cache (mostra os MB liberados) e esvazia
+a Lixeira. Não toca nos seus arquivos.
 
-**Inicialização (startup)**
-- Lista cada programa que abre com o Windows e pergunta se quer desativar
-- Tudo que for desativado fica salvo em backup e pode ser revertido com
-  `Restaurar-Inicializacao.ps1`
+**3) Inicialização** — lista cada programa que abre com o Windows e pergunta se
+quer desativar. Salva backup para reverter.
 
-## Reduzir processos/serviços (modo leve agressivo)
+**4) Serviços** — reduz processos em segundo plano, organizados por risco:
+- **Seguros:** telemetria, SysMain, Fax, modo demo, registro remoto, etc.
+- **Xbox:** desative se não joga via Xbox.
+- **Cuidado:** Spooler (impressão), Windows Search, geolocalização.
+- **Apps em 2º plano + telemetria** (registro).
+Cada serviço mostra **o que você perde** e salva backup.
 
-Para deixar o sistema com **o mínimo de processos rodando**, use o
-`Otimizar-Servicos.bat`. Ele desativa serviços em segundo plano, sempre
-mostrando **o que você perde** em cada um e perguntando **Y/N**. Os
-serviços vêm organizados por nível de risco:
+**5) Tarefas agendadas** — desativa tarefas conhecidas de coleta de dados e
+compatibilidade.
 
-- **Grupo 1 — Seguros:** telemetria, SysMain/Superfetch, Fax, modo demo,
-  registro remoto, relatório de erros, mapas, etc.
-- **Grupo 2 — Xbox/Game Bar:** desative se não joga via Xbox.
-- **Grupo 3 — Cuidado:** Spooler (impressão), Windows Search, teclado de
-  toque, geolocalização — só desative se tem certeza que não usa.
-- **Grupo 4 — Apps em segundo plano + telemetria** (via registro).
+**6) Remover apps inúteis** — lista bloatware instalado (Candy Crush, jogos
+King, 3D Builder, etc.) e pergunta um por um. Apps essenciais não entram.
 
-O estado original de cada serviço é salvo em `backup-servicos.json` e pode
-ser revertido a qualquer momento com `Restaurar-Servicos.ps1`.
+**7) Aplicar tudo** — cria ponto de restauração e passa por todas as seções.
 
-> ⚠️ Não desative serviços às cegas. Desligar o serviço errado pode quebrar
-> recursos (impressão, som, rede). Por isso cada item explica o impacto.
+**8) Restaurar** — desfaz serviços e inicialização usando os backups.
+
+## Segurança
+
+- Tudo pede **Y/N** — nada é aplicado sem você confirmar.
+- A opção 7 oferece criar um **ponto de restauração** do Windows no início.
+- Serviços e inicialização têm **backup** e podem ser revertidos (opção 8).
+
+> ⚠️ Não desative serviços essenciais às cegas. Cada item explica o impacto;
+> em caso de dúvida, mantenha (N).
 
 ## Requisitos
 
 - Windows 10
 - Executar como **Administrador** (o `.bat` já cuida disso)
-
-## Aviso
-
-As alterações mexem principalmente no perfil do usuário (`HKCU`) e são
-reversíveis. Mesmo assim, aceite a criação do ponto de restauração no início
-para ter uma camada extra de segurança.
