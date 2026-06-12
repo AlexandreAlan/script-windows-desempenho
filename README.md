@@ -8,9 +8,12 @@ tem controle total sobre o que muda.
 
 | Arquivo | Função |
 |---|---|
-| `Otimizar-Windows10.ps1` | Script principal de otimização |
+| `Otimizar-Windows10.ps1` | Script principal (aparência, limpeza, inicialização) |
 | `Otimizar-Windows10.bat` | Duplo-clique → abre o script já como **Administrador** |
 | `Restaurar-Inicializacao.ps1` | Reverte os programas de inicialização que você desativou |
+| `Otimizar-Servicos.ps1` | **Reduz processos/serviços** em segundo plano (modo leve) |
+| `Otimizar-Servicos.bat` | Duplo-clique → abre o de serviços como **Administrador** |
+| `Restaurar-Servicos.ps1` | Reverte os serviços desativados (lê o backup salvo) |
 
 ## Como usar
 
@@ -47,6 +50,26 @@ tem controle total sobre o que muda.
 - Lista cada programa que abre com o Windows e pergunta se quer desativar
 - Tudo que for desativado fica salvo em backup e pode ser revertido com
   `Restaurar-Inicializacao.ps1`
+
+## Reduzir processos/serviços (modo leve agressivo)
+
+Para deixar o sistema com **o mínimo de processos rodando**, use o
+`Otimizar-Servicos.bat`. Ele desativa serviços em segundo plano, sempre
+mostrando **o que você perde** em cada um e perguntando **Y/N**. Os
+serviços vêm organizados por nível de risco:
+
+- **Grupo 1 — Seguros:** telemetria, SysMain/Superfetch, Fax, modo demo,
+  registro remoto, relatório de erros, mapas, etc.
+- **Grupo 2 — Xbox/Game Bar:** desative se não joga via Xbox.
+- **Grupo 3 — Cuidado:** Spooler (impressão), Windows Search, teclado de
+  toque, geolocalização — só desative se tem certeza que não usa.
+- **Grupo 4 — Apps em segundo plano + telemetria** (via registro).
+
+O estado original de cada serviço é salvo em `backup-servicos.json` e pode
+ser revertido a qualquer momento com `Restaurar-Servicos.ps1`.
+
+> ⚠️ Não desative serviços às cegas. Desligar o serviço errado pode quebrar
+> recursos (impressão, som, rede). Por isso cada item explica o impacto.
 
 ## Requisitos
 
