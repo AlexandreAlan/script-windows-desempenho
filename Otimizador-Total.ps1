@@ -346,6 +346,110 @@ function Secao-Bloatware {
 }
 
 # ======================================================================
+#  SECAO 9 - OTIMIZAR DISCO (HD/SSD)
+# ======================================================================
+function Secao-Disco {
+    Titulo-Secao "9) OTIMIZAR DISCO (detecta HD ou SSD)"
+    Write-Host "  HD comum: desfragmenta. SSD: faz TRIM (limpeza). Automatico." -ForegroundColor Gray
+
+    $volumes = Get-Volume | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
+    if (-not $volumes) { Write-Host "   Nenhum disco fixo encontrado." -ForegroundColor DarkGray; return }
+
+    foreach ($v in $volumes) {
+        $letra = $v.DriveLetter
+        # descobre o tipo de midia (SSD x HDD)
+        $tipo = "Desconhecido"
+        try {
+            $pd = Get-PhysicalDisk -ErrorAction SilentlyContinue |
+                  Where-Object { $_.DeviceId -ne $null } | Select-Object -First 1
+            $disco = Get-Partition -DriveLetter $letra -ErrorAction SilentlyContinue |
+                     Get-Disk -ErrorAction SilentlyContinue
+            if ($disco) {
+                $fis = Get-PhysicalDisk -ErrorAction SilentlyContinue |
+                       Where-Object { $_.DeviceId -eq $disco.Number }
+                if ($fis) { $tipo = $fis.MediaType }
+            }
+        } catch { }
+
+        Write-Host ""
+        Write-Host ("-" * 64) -ForegroundColor DarkCyan
+        Write-Host "  Disco $($letra):  (tipo: $tipo)" -ForegroundColor Cyan
+        if ($tipo -eq "SSD") {
+            Write-Host "  Acao: TRIM (limpeza correta para SSD, NAO desfragmenta)." -ForegroundColor Gray
+        } elseif ($tipo -eq "HDD") {
+            Write-Host "  Acao: desfragmentar (recomendado para HD comum)." -ForegroundColor Gray
+        } else {
+            Write-Host "  Tipo desconhecido: vou usar otimizacao padrao do Windows." -ForegroundColor Gray
+        }
+        if (Perguntar "Otimizar o disco $($letra):?") {
+            try {
+                if ($tipo -eq "SSD") {
+                    Optimize-Volume -DriveLetter $letra -ReTrim -ErrorAction Stop
+                } elseif ($tipo -eq "HDD") {
+                    Optimize-Volume -DriveLetter $letra -Defrag -ErrorAction Stop
+                } else {
+                    Optimize-Volume -DriveLetter $letra -ErrorAction Stop
+                }
+                Write-Host "   [OK] Disco $($letra): otimizado." -ForegroundColor Green
+                $Global:Aplicadas++
+            } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
+        } else { Write-Host "   [--] Pulado." -ForegroundColor DarkYellow; $Global:Puladas++ }
+    }
+}
+
+# ======================================================================
+#  SECAO 10 - AJUSTES DE REDE (DNS + THROTTLING)
+# ======================================================================
+function Secao-Rede {
+    Titulo-Secao "10) AJUSTES DE REDE (DNS rapido + throttling)"
+    Write-Host "  Deixa a navegacao um pouco mais rapida. Reversivel." -ForegroundColor Gray
+
+    # --- DNS rapido ---
+    Write-Host ""
+    Write-Host ("-" * 64) -ForegroundColor DarkCyan
+    Write-Host "  Trocar DNS para um mais rapido" -ForegroundColor Cyan
+    Write-Host "    1 = Cloudflare (1.1.1.1 / 1.0.0.1)  -> rapido e privado" -ForegroundColor Gray
+    Write-Host "    2 = Google     (8.8.8.8 / 8.8.4.4)  -> rapido e estavel" -ForegroundColor Gray
+    Write-Host "    3 = Voltar ao AUTOMATICO (DNS do provedor)" -ForegroundColor Gray
+    Write-Host "    N = Nao mexer no DNS" -ForegroundColor Gray
+    $escolha = Read-Host " Escolha (1/2/3/N)"
+    $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" }
+    switch ($escolha.ToUpper()) {
+        "1" {
+            try {
+                foreach ($a in $adapters) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses ("1.1.1.1","1.0.0.1") -ErrorAction Stop }
+                Write-Host "   [OK] DNS Cloudflare aplicado." -ForegroundColor Green; $Global:Aplicadas++
+            } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
+        }
+        "2" {
+            try {
+                foreach ($a in $adapters) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses ("8.8.8.8","8.8.4.4") -ErrorAction Stop }
+                Write-Host "   [OK] DNS Google aplicado." -ForegroundColor Green; $Global:Aplicadas++
+            } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
+        }
+        "3" {
+            try {
+                foreach ($a in $adapters) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses -ErrorAction Stop }
+                Write-Host "   [OK] DNS voltou ao automatico." -ForegroundColor Green; $Global:Aplicadas++
+            } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
+        }
+        default { Write-Host "   [--] DNS nao alterado." -ForegroundColor DarkYellow; $Global:Puladas++ }
+    }
+
+    # --- Throttling de rede ---
+    Item "Desativar 'Network Throttling' (soltar velocidade em 2o plano)" `
+        "Perde: nada relevante; o Windows deixa de limitar a rede." {
+        Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xffffffff
+        Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness" 0
+    }
+
+    Item "Limpar cache de DNS agora" "Resolve sites que ficaram 'presos' no cache antigo." {
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+        ipconfig /flushdns | Out-Null
+    }
+}
+
+# ======================================================================
 #  SECAO 8 - RESTAURAR
 # ======================================================================
 function Secao-Restaurar {
@@ -424,6 +528,8 @@ function Mostrar-Menu {
     Write-Host "   4 - Servicos / processos em segundo plano" -ForegroundColor Gray
     Write-Host "   5 - Tarefas agendadas (telemetria)" -ForegroundColor Gray
     Write-Host "   6 - Remover apps inuteis (Candy Crush, etc.)" -ForegroundColor Gray
+    Write-Host "   9 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
+    Write-Host "  10 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
     Write-Host "   7 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "   8 - RESTAURAR (desfazer servicos + inicializacao)" -ForegroundColor Yellow
     Write-Host "   0 - Sair" -ForegroundColor Gray
@@ -445,6 +551,8 @@ do {
         "4" { Secao-Servicos; Pause }
         "5" { Secao-Tarefas; Pause }
         "6" { Secao-Bloatware; Pause }
+        "9" { Secao-Disco; Pause }
+        "10" { Secao-Rede; Pause }
         "7" {
             Ponto-Restauracao
             Secao-Aparencia
@@ -453,6 +561,8 @@ do {
             Secao-Servicos
             Secao-Tarefas
             Secao-Bloatware
+            Secao-Disco
+            Secao-Rede
             Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
             Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
             Pause

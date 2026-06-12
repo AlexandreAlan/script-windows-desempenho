@@ -29,6 +29,8 @@ para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunt
 4 - Servicos / processos em segundo plano
 5 - Tarefas agendadas (telemetria)
 6 - Remover apps inuteis (Candy Crush, etc.)
+9 - Otimizar disco (HD/SSD automatico)
+10 - Ajustes de rede (DNS rapido + throttling)
 7 - APLICAR TUDO (passa por todas as secoes)
 8 - RESTAURAR (desfazer servicos + inicializacao)
 0 - Sair
@@ -57,6 +59,13 @@ compatibilidade.
 
 **6) Remover apps inúteis** — lista bloatware instalado (Candy Crush, jogos
 King, 3D Builder, etc.) e pergunta um por um. Apps essenciais não entram.
+
+**9) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
+TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
+
+**10) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
+Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
+limpa o cache de DNS.
 
 **7) Aplicar tudo** — cria ponto de restauração e passa por todas as seções.
 
