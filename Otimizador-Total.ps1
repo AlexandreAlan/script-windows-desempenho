@@ -41,6 +41,11 @@ if (-not $ehAdmin) {
 $Global:Aplicadas = 0
 $Global:Puladas   = 0
 $PastaScript      = Split-Path -Parent $MyInvocation.MyCommand.Definition
+# Quando rodado direto da web (irm | iex) nao existe arquivo, entao $PastaScript
+# fica vazio. Cai pro %TEMP% pra os backups (backup-servicos.json) terem onde ficar.
+if ([string]::IsNullOrWhiteSpace($PastaScript) -or -not (Test-Path $PastaScript)) {
+    $PastaScript = $env:TEMP
+}
 $ArquivoBackupSvc = Join-Path $PastaScript "backup-servicos.json"
 
 $HKCU          = "HKCU:"
