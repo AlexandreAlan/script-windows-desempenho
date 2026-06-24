@@ -25,7 +25,7 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 ```
 
 > Não instala nada — o script roda na hora e os backups ficam no `%TEMP%`. Para
-> guardar os backups junto do script (e reusar a opção **8 – Restaurar** depois),
+> guardar os backups junto do script (e reusar a opção **12 – Restaurar** depois),
 > use o método clássico do `.bat` em **[Como usar](#como-usar)**.
 
 ## Arquivos
@@ -37,7 +37,7 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 
 > Os backups ficam em `backup-servicos.json` (serviços), no registro
 > (inicialização) e em `backup-registro.json` (ajustes de registro) — todos
-> usados pela opção **8 (Restaurar)** para desfazer.
+> usados pela opção **12 (Restaurar)** para desfazer.
 
 ## Como usar
 
@@ -54,12 +54,12 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 4 - Servicos / processos em segundo plano
 5 - Tarefas agendadas (telemetria)
 6 - Remover apps inuteis (Candy Crush, etc.)
-9 - Otimizar disco (HD/SSD automatico)
-10 - Ajustes de rede (DNS rapido + throttling)
-11 - Ver melhora de desempenho (antes x depois)
-12 - Ajustes do Windows 11 (menu classico, widgets, Teams)
-7 - APLICAR TUDO (passa por todas as secoes)
-8 - RESTAURAR (desfazer servicos + inicializacao)
+7 - Otimizar disco (HD/SSD automatico)
+8 - Ajustes de rede (DNS rapido + throttling)
+9 - Ajustes do Windows 11 (menu classico, widgets, Teams)
+10 - Ver melhora de desempenho (antes x depois)
+11 - APLICAR TUDO (passa por todas as secoes)
+12 - RESTAURAR (desfazer servicos + inicializacao + registro)
 0 - Sair
 ```
 
@@ -87,28 +87,28 @@ compatibilidade.
 **6) Remover apps inúteis** — lista bloatware instalado (Candy Crush, jogos
 King, 3D Builder, etc.) e pergunta um por um. Apps essenciais não entram.
 
-**9) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
+**7) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
 TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
 
-**10) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
+**8) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
 Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
 limpa o cache de DNS.
 
-**11) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
-uso, RAM livre, número de processos e serviços ativos), com setas indicando o
-que melhorou. O topo do menu também exibe esses números **em tempo real**.
-
-**12) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
+**9) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
 (detecção automática pelo número do build). Oferece **ponto de restauração**
 antes e inclui: **menu de contexto clássico** (igual ao Win10), **desativar os
 widgets** da barra e **desativar o Chat/Teams** da barra. Em Windows 10, a opção
 avisa que não se aplica.
 
-**7) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
+**10) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
+uso, RAM livre, número de processos e serviços ativos), com setas indicando o
+que melhorou. O topo do menu também exibe esses números **em tempo real**.
+
+**11) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
 (inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
 a comparação de desempenho.
 
-**8) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
+**12) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
 (aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
 seja, dá pra reverter **tudo** que o script alterou.
 
@@ -122,9 +122,10 @@ usa em manutenção de clientes.
 ## Segurança
 
 - Tudo pede **Y/N** — nada é aplicado sem você confirmar.
-- As opções 7 e 12 oferecem criar um **ponto de restauração** do Windows no início.
+- As opções 11 (Aplicar Tudo) e 9 (Windows 11) oferecem criar um **ponto de
+  restauração** do Windows no início.
 - Serviços, inicialização **e ajustes de registro** têm **backup** e podem ser
-  revertidos pela opção 8 — nada fica sem volta.
+  revertidos pela opção 12 — nada fica sem volta.
 - Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
   vão pro relatório — **não quebram a tela** com erro vermelho.
 
