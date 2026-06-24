@@ -12,12 +12,12 @@
       4  - Servicos / processos em segundo plano
       5  - Tarefas agendadas (telemetria/compatibilidade)
       6  - Remover apps inuteis (Candy Crush, etc.)
-      9  - Otimizar disco (HD/SSD automatico)
-      10 - Ajustes de rede (DNS rapido + throttling)
-      11 - Ver melhora de desempenho (antes x depois)
-      12 - Ajustes do Windows 11 (menu classico, widgets, Teams)
-      7  - APLICAR TUDO (passa por todas as secoes)
-      8  - RESTAURAR (servicos + inicializacao)
+      7  - Otimizar disco (HD/SSD automatico)
+      8  - Ajustes de rede (DNS rapido + throttling)
+      9  - Ajustes do Windows 11 (menu classico, widgets, Teams)
+      10 - Ver melhora de desempenho (antes x depois)
+      11 - APLICAR TUDO (passa por todas as secoes)
+      12 - RESTAURAR (servicos + inicializacao + registro)
       0  - Sair
 
     Cada mudanca pergunta Y (sim) / N (nao). Backups sao salvos para
@@ -73,10 +73,10 @@ if (Test-Path $ArquivoBackupSvc) {
 }
 
 # ----------------------------------------------------------------------
-#  BACKUP DE REGISTRO (pra restauracao completa pela opcao 8)
+#  BACKUP DE REGISTRO (pra restauracao completa pela opcao 12)
 # ----------------------------------------------------------------------
 # Antes de cada Definir-Registro, guardamos o valor ANTIGO (ou marcamos que nao
-# existia) num backup-registro.json. A opcao 8 usa isso pra desfazer os tweaks de
+# existia) num backup-registro.json. A opcao 12 usa isso pra desfazer os tweaks de
 # registro (aparencia, throttling de rede, widgets/Teams do W11, etc.).
 #   $Global:BackupReg   = { "Caminho|Nome" -> @{ Existia; Caminho; Nome; Valor; Tipo } }
 #   $Global:BackupRegDel = chaves criadas do zero que devem ser APAGADAS no restore
@@ -207,7 +207,7 @@ function Linha-Comparacao {
 
 function Definir-Registro {
     param([string]$Caminho,[string]$Nome,$Valor,[string]$Tipo="DWord")
-    # Guarda o valor antigo ANTES de mexer, pra opcao 8 conseguir desfazer.
+    # Guarda o valor antigo ANTES de mexer, pra opcao 12 conseguir desfazer.
     Backup-Registro $Caminho $Nome
     # -ErrorAction Stop: se o registro estiver bloqueado (GPO/permissao), o erro
     # vira "terminating" e e capturado por quem chama (Item) -> vira aviso + log,
@@ -501,10 +501,10 @@ function Secao-Bloatware {
 }
 
 # ======================================================================
-#  SECAO 9 - OTIMIZAR DISCO (HD/SSD)
+#  SECAO 7 - OTIMIZAR DISCO (HD/SSD)
 # ======================================================================
 function Secao-Disco {
-    Titulo-Secao "9) OTIMIZAR DISCO (detecta HD ou SSD)"
+    Titulo-Secao "7) OTIMIZAR DISCO (detecta HD ou SSD)"
     Write-Host "  HD comum: desfragmenta. SSD: faz TRIM (limpeza). Automatico." -ForegroundColor Gray
 
     $volumes = Get-Volume | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
@@ -553,10 +553,10 @@ function Secao-Disco {
 }
 
 # ======================================================================
-#  SECAO 10 - AJUSTES DE REDE (DNS + THROTTLING)
+#  SECAO 8 - AJUSTES DE REDE (DNS + THROTTLING)
 # ======================================================================
 function Secao-Rede {
-    Titulo-Secao "10) AJUSTES DE REDE (DNS rapido + throttling)"
+    Titulo-Secao "8) AJUSTES DE REDE (DNS rapido + throttling)"
     Write-Host "  Deixa a navegacao um pouco mais rapida. Reversivel." -ForegroundColor Gray
 
     # --- DNS rapido ---
@@ -605,10 +605,10 @@ function Secao-Rede {
 }
 
 # ======================================================================
-#  SECAO 11 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
+#  SECAO 10 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
 # ======================================================================
 function Secao-Comparar {
-    Titulo-Secao "11) MELHORA DE DESEMPENHO (antes x depois)"
+    Titulo-Secao "10) MELHORA DE DESEMPENHO (antes x depois)"
     if (-not $Global:DesempenhoInicial) {
         Write-Host "   Ainda nao ha medida inicial." -ForegroundColor DarkGray; return
     }
@@ -627,7 +627,7 @@ function Secao-Comparar {
 }
 
 # ======================================================================
-#  SECAO 8 - RESTAURAR
+#  SECAO 12 - RESTAURAR
 # ======================================================================
 function Secao-Restaurar {
     Titulo-Secao "RESTAURAR (desfazer)"
@@ -729,18 +729,18 @@ function Ponto-Restauracao {
 }
 
 # ======================================================================
-#  SECAO 12 - AJUSTES DO WINDOWS 11
+#  SECAO 9 - AJUSTES DO WINDOWS 11
 # ======================================================================
 function Secao-Windows11 {
-    Titulo-Secao "12) AJUSTES DO WINDOWS 11"
+    Titulo-Secao "9) AJUSTES DO WINDOWS 11"
     if (-not $Global:Win11) {
         Write-Host "   Este PC e $Global:NomeSO - esta secao e exclusiva do Windows 11." -ForegroundColor DarkYellow
         Add-Log "INFO" "Secao W11 ignorada (sistema: $Global:NomeSO)"
         return
     }
     Write-Host "  Ajustes especificos do W11. Reversiveis (ponto de restauracao / Windows)." -ForegroundColor Gray
-    # Estes ajustes mexem no registro e NAO sao desfeitos pela opcao 8 (Restaurar),
-    # entao oferecemos um ponto de restauracao do Windows antes.
+    # Estes ajustes mexem no registro; sao revertidos pela opcao 12 (Restaurar),
+    # mas oferecemos tambem um ponto de restauracao do Windows antes, por garantia.
     Ponto-Restauracao
 
     Item "Menu de contexto CLASSICO (igual ao Windows 10)" `
@@ -748,7 +748,7 @@ function Secao-Windows11 {
         $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
         reg add $clsid /f /ve | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
-        # restore (opcao 8) apaga a chave inteira pra voltar ao menu do W11
+        # restore (opcao 12) apaga a chave inteira pra voltar ao menu do W11
         Registrar-KeyParaApagar "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
     }
     Item "Desativar os WIDGETS da barra de tarefas" `
@@ -788,12 +788,12 @@ function Mostrar-Menu {
     Write-Host "   4 - Servicos / processos em segundo plano" -ForegroundColor Gray
     Write-Host "   5 - Tarefas agendadas (telemetria)" -ForegroundColor Gray
     Write-Host "   6 - Remover apps inuteis (Candy Crush, etc.)" -ForegroundColor Gray
-    Write-Host "   9 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
-    Write-Host "  10 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
-    Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
-    Write-Host ("  12 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
-    Write-Host "   7 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
-    Write-Host "   8 - RESTAURAR (desfazer servicos + inicializacao)" -ForegroundColor Yellow
+    Write-Host "   7 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
+    Write-Host "   8 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
+    Write-Host ("   9 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
+    Write-Host "  10 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
+    Write-Host "  11 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
+    Write-Host "  12 - RESTAURAR (desfazer servicos + inicializacao + registro)" -ForegroundColor Yellow
     Write-Host "   0 - Sair" -ForegroundColor Gray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas" -ForegroundColor DarkGray
@@ -813,11 +813,11 @@ do {
         "4" { Secao-Servicos; Pause }
         "5" { Secao-Tarefas; Pause }
         "6" { Secao-Bloatware; Pause }
-        "9" { Secao-Disco; Pause }
-        "10" { Secao-Rede; Pause }
-        "11" { Secao-Comparar; Pause }
-        "12" { Secao-Windows11; Pause }
-        "7" {
+        "7" { Secao-Disco; Pause }
+        "8" { Secao-Rede; Pause }
+        "9" { Secao-Windows11; Pause }
+        "10" { Secao-Comparar; Pause }
+        "11" {
             Ponto-Restauracao
             Secao-Aparencia
             Secao-Limpeza
@@ -833,7 +833,7 @@ do {
             Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
             Pause
         }
-        "8" { Secao-Restaurar; Pause }
+        "12" { Secao-Restaurar; Pause }
         "0" { Write-Host "  Saindo..." -ForegroundColor Gray }
         default { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
