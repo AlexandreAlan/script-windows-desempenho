@@ -1,5 +1,7 @@
 # Script Windows Desempenho
 
+[![Lint PowerShell](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml)
+
 **Otimizador Total** para **Windows 10 e 11** — tudo em um único script, com menu,
 para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunta
 **Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**. Detecta o
@@ -33,8 +35,9 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 | `Otimizador-Total.ps1` | **O script completo** (menu com tudo) |
 | `Otimizador-Total.bat` | Duplo-clique → abre já como **Administrador** |
 
-> O backup dos serviços fica em `backup-servicos.json` e o da inicialização no
-> registro — ambos usados pela opção **8 (Restaurar)**.
+> Os backups ficam em `backup-servicos.json` (serviços), no registro
+> (inicialização) e em `backup-registro.json` (ajustes de registro) — todos
+> usados pela opção **8 (Restaurar)** para desfazer.
 
 ## Como usar
 
@@ -105,7 +108,9 @@ avisa que não se aplica.
 (inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
 a comparação de desempenho.
 
-**8) Restaurar** — desfaz serviços e inicialização usando os backups.
+**8) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
+(aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
+seja, dá pra reverter **tudo** que o script alterou.
 
 ### Relatório de auditoria
 
@@ -118,7 +123,8 @@ usa em manutenção de clientes.
 
 - Tudo pede **Y/N** — nada é aplicado sem você confirmar.
 - As opções 7 e 12 oferecem criar um **ponto de restauração** do Windows no início.
-- Serviços e inicialização têm **backup** e podem ser revertidos (opção 8).
+- Serviços, inicialização **e ajustes de registro** têm **backup** e podem ser
+  revertidos pela opção 8 — nada fica sem volta.
 - Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
   vão pro relatório — **não quebram a tela** com erro vermelho.
 
