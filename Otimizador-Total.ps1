@@ -14,10 +14,11 @@
       6  - Remover apps inuteis (Candy Crush, etc.)
       7  - Otimizar disco (HD/SSD automatico)
       8  - Ajustes de rede (DNS rapido + throttling)
-      9  - Ajustes do Windows 11 (menu classico, widgets, Teams)
-      10 - Ver melhora de desempenho (antes x depois)
-      11 - APLICAR TUDO (passa por todas as secoes)
-      12 - RESTAURAR (servicos + inicializacao + registro)
+      9  - Maxima performance (CPU + sistema, monitoring-safe)
+      10 - Ajustes do Windows 11 (menu classico, widgets, Teams)
+      11 - Ver melhora de desempenho (antes x depois)
+      12 - APLICAR TUDO (passa por todas as secoes)
+      13 - RESTAURAR (servicos + inicializacao + registro)
       0  - Sair
 
     Cada mudanca pergunta Y (sim) / N (nao). Backups sao salvos para
@@ -73,10 +74,10 @@ if (Test-Path $ArquivoBackupSvc) {
 }
 
 # ----------------------------------------------------------------------
-#  BACKUP DE REGISTRO (pra restauracao completa pela opcao 12)
+#  BACKUP DE REGISTRO (pra restauracao completa pela opcao 13)
 # ----------------------------------------------------------------------
 # Antes de cada Definir-Registro, guardamos o valor ANTIGO (ou marcamos que nao
-# existia) num backup-registro.json. A opcao 12 usa isso pra desfazer os tweaks de
+# existia) num backup-registro.json. A opcao 13 usa isso pra desfazer os tweaks de
 # registro (aparencia, throttling de rede, widgets/Teams do W11, etc.).
 #   $Global:BackupReg   = { "Caminho|Nome" -> @{ Existia; Caminho; Nome; Valor; Tipo } }
 #   $Global:BackupRegDel = chaves criadas do zero que devem ser APAGADAS no restore
@@ -135,6 +136,11 @@ $Global:BuildSO = [int]([System.Environment]::OSVersion.Version.Build)
 $Global:Win11   = $Global:BuildSO -ge 22000
 $Global:NomeSO  = if ($Global:Win11) { "Windows 11" } else { "Windows 10" }
 
+# Maquina em dominio (AD)? Usado pra RESPEITAR a Politica de Grupo (GPO): em
+# maquina gerenciada nao mexemos na area de \Policies\ (quem manda la e a GPO).
+$Global:EmDominio = $false
+try { $Global:EmDominio = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain } catch { }
+
 # Log de auditoria: cada acao registra OK/ERRO/PULADO; ao sair, gera um
 # relatorio otimizador-log_<data>.txt na Area de Trabalho (comprovante de servico).
 $Global:Log = New-Object System.Collections.Generic.List[string]
@@ -154,6 +160,7 @@ function Salvar-Log {
             " Data:    $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')",
             " Maquina: $env:COMPUTERNAME   Usuario: $env:USERNAME",
             " Sistema: $Global:NomeSO (build $Global:BuildSO)",
+            " Dominio: $(if ($Global:EmDominio) { 'SIM (AD) - ajustes de GPO respeitados' } else { 'NAO (PC fora de dominio)' })",
             " Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas",
             "=============================================================="
         )
@@ -207,7 +214,20 @@ function Linha-Comparacao {
 
 function Definir-Registro {
     param([string]$Caminho,[string]$Nome,$Valor,[string]$Tipo="DWord")
-    # Guarda o valor antigo ANTES de mexer, pra opcao 12 conseguir desfazer.
+    # RESPEITO A GPO: a chave \Policies\ e territorio da Politica de Grupo. Em
+    # maquina de DOMINIO (AD), ou se o valor JA estiver definido (GPO/admin no
+    # controle), NAO mexemos - pra nunca sobrescrever/atrapalhar uma GPO. Em PC
+    # domestico (sem dominio) e com a chave livre, aplicamos normalmente.
+    if ($Caminho -match '\\Policies\\') {
+        $jaDefinido = (Test-Path $Caminho) -and ($null -ne (Get-ItemProperty -Path $Caminho -Name $Nome -ErrorAction SilentlyContinue))
+        if ($Global:EmDominio -or $jaDefinido) {
+            $motivo = if ($Global:EmDominio) { "maquina em dominio" } else { "ja definido (GPO/admin)" }
+            Write-Host "   [GPO] '$Nome' fica a cargo da Politica de Grupo ($motivo) - nao alterado." -ForegroundColor DarkCyan
+            Add-Log "GPO" "Ignorado p/ respeitar GPO ($motivo): $Caminho\$Nome"
+            return
+        }
+    }
+    # Guarda o valor antigo ANTES de mexer, pra opcao 13 conseguir desfazer.
     Backup-Registro $Caminho $Nome
     # -ErrorAction Stop: se o registro estiver bloqueado (GPO/permissao), o erro
     # vira "terminating" e e capturado por quem chama (Item) -> vira aviso + log,
@@ -605,10 +625,10 @@ function Secao-Rede {
 }
 
 # ======================================================================
-#  SECAO 10 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
+#  SECAO 11 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
 # ======================================================================
 function Secao-Comparar {
-    Titulo-Secao "10) MELHORA DE DESEMPENHO (antes x depois)"
+    Titulo-Secao "11) MELHORA DE DESEMPENHO (antes x depois)"
     if (-not $Global:DesempenhoInicial) {
         Write-Host "   Ainda nao ha medida inicial." -ForegroundColor DarkGray; return
     }
@@ -627,7 +647,7 @@ function Secao-Comparar {
 }
 
 # ======================================================================
-#  SECAO 12 - RESTAURAR
+#  SECAO 13 - RESTAURAR
 # ======================================================================
 function Secao-Restaurar {
     Titulo-Secao "RESTAURAR (desfazer)"
@@ -729,17 +749,17 @@ function Ponto-Restauracao {
 }
 
 # ======================================================================
-#  SECAO 9 - AJUSTES DO WINDOWS 11
+#  SECAO 10 - AJUSTES DO WINDOWS 11
 # ======================================================================
 function Secao-Windows11 {
-    Titulo-Secao "9) AJUSTES DO WINDOWS 11"
+    Titulo-Secao "10) AJUSTES DO WINDOWS 11"
     if (-not $Global:Win11) {
         Write-Host "   Este PC e $Global:NomeSO - esta secao e exclusiva do Windows 11." -ForegroundColor DarkYellow
         Add-Log "INFO" "Secao W11 ignorada (sistema: $Global:NomeSO)"
         return
     }
     Write-Host "  Ajustes especificos do W11. Reversiveis (ponto de restauracao / Windows)." -ForegroundColor Gray
-    # Estes ajustes mexem no registro; sao revertidos pela opcao 12 (Restaurar),
+    # Estes ajustes mexem no registro; sao revertidos pela opcao 13 (Restaurar),
     # mas oferecemos tambem um ponto de restauracao do Windows antes, por garantia.
     Ponto-Restauracao
 
@@ -748,7 +768,7 @@ function Secao-Windows11 {
         $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
         reg add $clsid /f /ve | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
-        # restore (opcao 12) apaga a chave inteira pra voltar ao menu do W11
+        # restore (opcao 13) apaga a chave inteira pra voltar ao menu do W11
         Registrar-KeyParaApagar "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
     }
     Item "Desativar os WIDGETS da barra de tarefas" `
@@ -761,6 +781,54 @@ function Secao-Windows11 {
         Definir-Registro $RegAdvanced "TaskbarMn" 0
     }
     Item "Reiniciar o Explorer para aplicar os ajustes do W11" "" { Reiniciar-Explorer }
+}
+
+# ======================================================================
+#  SECAO 9 - MAXIMA PERFORMANCE (CPU + Sistema)
+# ======================================================================
+function Secao-Performance {
+    Titulo-Secao "9) MAXIMA PERFORMANCE (CPU + Sistema)"
+    Write-Host "  Solta o maximo da maquina SEM fixar a CPU em 100%: o clock ainda" -ForegroundColor Gray
+    Write-Host "  escala com a carga, pra monitoramento (ex.: Zabbix) ver gargalo real." -ForegroundColor Gray
+    # Os itens de powercfg/bcdedit NAO sao desfeitos pela opcao 13 (que cobre so o
+    # registro); por isso oferecemos um ponto de restauracao do Windows antes.
+    Ponto-Restauracao
+
+    Write-Host ""; Write-Host "  >>> CPU / ENERGIA <<<" -ForegroundColor Green
+    Item "Garantir TODOS os nucleos liberados no boot" `
+        "Remove qualquer limite de processadores no boot. E o jeito CERTO de 'ativar nucleos' - o msconfig so LIMITA, nao ativa." {
+        # /deletevalue da erro se nao houver limite definido; isso e OK (ja esta liberado).
+        cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
+        Write-Host "   Qualquer limite de nucleos foi removido (Windows usa todos)." -ForegroundColor DarkGray
+    }
+    Item "CPU sempre pronta: core parking OFF + turbo liberado (max 100%)" `
+        "Mantem os nucleos ativos e libera a frequencia maxima SOB CARGA. NAO fixa o minimo: ociosa, a CPU baixa o clock (o monitoramento ve a carga real)." {
+        powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+        powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+        powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+        powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+        powercfg -setactive SCHEME_CURRENT | Out-Null
+    }
+
+    Write-Host ""; Write-Host "  >>> SISTEMA / REGISTRO (reversivel pela opcao 13) <<<" -ForegroundColor Green
+    Item "Prioridade para o programa em foco (resposta mais rapida)" `
+        "Win32PrioritySeparation: da mais CPU pro app que voce esta usando agora." {
+        Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 38
+    }
+    Item "Desativar Game DVR / gravacao em 2o plano" `
+        "Para a captura de tela em segundo plano da Xbox Game Bar (libera CPU/GPU/RAM)." {
+        Definir-Registro "HKCU:\System\GameConfigStore" "GameDVR_Enabled" 0
+        Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" 0
+        Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
+    }
+    Item "Ativar HAGS (agendamento de GPU por hardware)" `
+        "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel." {
+        Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2
+    }
+    Item "Tirar o atraso dos programas de inicializacao" `
+        "Apps de startup abrem sem o atraso artificial que o Windows aplica." {
+        Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" "StartupDelayInMSec" 0
+    }
 }
 
 # ======================================================================
@@ -781,6 +849,9 @@ function Mostrar-Menu {
         $agora.RamUsoPct, $agora.RamLivreGB, $agora.Processos, $agora.ServicosAtivos) -ForegroundColor Cyan
     Write-Host ("   No inicio:         RAM em uso {0}%  | Livre {1} GB  | Processos {2}  | Servicos ativos {3}" -f `
         $ini.RamUsoPct, $ini.RamLivreGB, $ini.Processos, $ini.ServicosAtivos) -ForegroundColor DarkGray
+    if ($Global:EmDominio) {
+        Write-Host "   Maquina em DOMINIO (AD): respeitando a Politica de Grupo (GPO)." -ForegroundColor DarkCyan
+    }
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   1 - Aparencia / efeitos visuais" -ForegroundColor Gray
     Write-Host "   2 - Limpeza (temporarios + lixeira)" -ForegroundColor Gray
@@ -790,10 +861,11 @@ function Mostrar-Menu {
     Write-Host "   6 - Remover apps inuteis (Candy Crush, etc.)" -ForegroundColor Gray
     Write-Host "   7 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
     Write-Host "   8 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
-    Write-Host ("   9 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
-    Write-Host "  10 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
-    Write-Host "  11 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
-    Write-Host "  12 - RESTAURAR (desfazer servicos + inicializacao + registro)" -ForegroundColor Yellow
+    Write-Host "   9 - Maxima performance (CPU + sistema, monitoring-safe)" -ForegroundColor Gray
+    Write-Host ("  10 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
+    Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
+    Write-Host "  12 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
+    Write-Host "  13 - RESTAURAR (desfazer servicos + inicializacao + registro)" -ForegroundColor Yellow
     Write-Host "   0 - Sair" -ForegroundColor Gray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas" -ForegroundColor DarkGray
@@ -815,9 +887,10 @@ do {
         "6" { Secao-Bloatware; Pause }
         "7" { Secao-Disco; Pause }
         "8" { Secao-Rede; Pause }
-        "9" { Secao-Windows11; Pause }
-        "10" { Secao-Comparar; Pause }
-        "11" {
+        "9" { Secao-Performance; Pause }
+        "10" { Secao-Windows11; Pause }
+        "11" { Secao-Comparar; Pause }
+        "12" {
             Ponto-Restauracao
             Secao-Aparencia
             Secao-Limpeza
@@ -827,13 +900,14 @@ do {
             Secao-Bloatware
             Secao-Disco
             Secao-Rede
+            Secao-Performance
             Secao-Windows11
             Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
             Secao-Comparar
             Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
             Pause
         }
-        "12" { Secao-Restaurar; Pause }
+        "13" { Secao-Restaurar; Pause }
         "0" { Write-Host "  Saindo..." -ForegroundColor Gray }
         default { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
