@@ -53,6 +53,7 @@ if ([string]::IsNullOrWhiteSpace($PastaScript) -or -not (Test-Path $PastaScript)
     $PastaScript = $env:TEMP
 }
 $ArquivoBackupSvc = Join-Path $PastaScript "backup-servicos.json"
+$ArquivoBackupReg = Join-Path $PastaScript "backup-registro.json"
 
 $HKCU          = "HKCU:"
 $RegMetrics    = "$HKCU\Control Panel\Desktop\WindowMetrics"
@@ -69,6 +70,58 @@ if (Test-Path $ArquivoBackupSvc) {
         $j = Get-Content $ArquivoBackupSvc -Raw | ConvertFrom-Json
         foreach ($p in $j.PSObject.Properties) { $Global:BackupSvc[$p.Name] = $p.Value }
     } catch { }
+}
+
+# ----------------------------------------------------------------------
+#  BACKUP DE REGISTRO (pra restauracao completa pela opcao 8)
+# ----------------------------------------------------------------------
+# Antes de cada Definir-Registro, guardamos o valor ANTIGO (ou marcamos que nao
+# existia) num backup-registro.json. A opcao 8 usa isso pra desfazer os tweaks de
+# registro (aparencia, throttling de rede, widgets/Teams do W11, etc.).
+#   $Global:BackupReg   = { "Caminho|Nome" -> @{ Existia; Caminho; Nome; Valor; Tipo } }
+#   $Global:BackupRegDel = chaves criadas do zero que devem ser APAGADAS no restore
+#                          (ex.: a chave do menu de contexto classico do W11).
+$Global:BackupReg    = @{}
+$Global:BackupRegDel = @{}
+if (Test-Path $ArquivoBackupReg) {
+    try {
+        $jr = Get-Content $ArquivoBackupReg -Raw | ConvertFrom-Json
+        if ($jr.props)   { foreach ($p in $jr.props.PSObject.Properties)   { $Global:BackupReg[$p.Name]    = $p.Value } }
+        if ($jr.delKeys) { foreach ($k in $jr.delKeys)                     { $Global:BackupRegDel[$k]      = $true   } }
+    } catch { }
+}
+
+function Salvar-BackupReg {
+    try {
+        $obj = [PSCustomObject]@{ props = $Global:BackupReg; delKeys = @($Global:BackupRegDel.Keys) }
+        $obj | ConvertTo-Json -Depth 6 | Set-Content -Path $ArquivoBackupReg -Encoding UTF8
+    } catch { }
+}
+
+# Guarda o estado atual de um valor de registro (so na 1a vez que e tocado).
+function Backup-Registro {
+    param([string]$Caminho,[string]$Nome)
+    $chave = "$Caminho|$Nome"
+    if ($Global:BackupReg.ContainsKey($chave)) { return }
+    $info = @{ Existia = $false; Caminho = $Caminho; Nome = $Nome }
+    try {
+        if ((Test-Path $Caminho) -and ($null -ne (Get-ItemProperty -Path $Caminho -Name $Nome -ErrorAction SilentlyContinue))) {
+            $valor = (Get-ItemProperty -Path $Caminho -Name $Nome -ErrorAction Stop).$Nome
+            $tipo  = (Get-Item -Path $Caminho).GetValueKind($Nome).ToString()
+            $info  = @{ Existia = $true; Caminho = $Caminho; Nome = $Nome; Valor = $valor; Tipo = $tipo }
+        }
+    } catch { }
+    $Global:BackupReg[$chave] = $info
+    Salvar-BackupReg
+}
+
+# Marca uma chave inteira (criada do zero) pra ser apagada no restore.
+function Registrar-KeyParaApagar {
+    param([string]$Chave)
+    if (-not $Global:BackupRegDel.ContainsKey($Chave)) {
+        $Global:BackupRegDel[$Chave] = $true
+        Salvar-BackupReg
+    }
 }
 
 # guarda o desempenho do INICIO para comparar depois (antes x depois)
@@ -154,6 +207,8 @@ function Linha-Comparacao {
 
 function Definir-Registro {
     param([string]$Caminho,[string]$Nome,$Valor,[string]$Tipo="DWord")
+    # Guarda o valor antigo ANTES de mexer, pra opcao 8 conseguir desfazer.
+    Backup-Registro $Caminho $Nome
     # -ErrorAction Stop: se o registro estiver bloqueado (GPO/permissao), o erro
     # vira "terminating" e e capturado por quem chama (Item) -> vira aviso + log,
     # nunca uma tela vermelha de erro nao tratado.
@@ -616,6 +671,44 @@ function Secao-Restaurar {
             } else { Write-Host "   [--] Mantido desativado." -ForegroundColor DarkYellow }
         }
     } else { Write-Host "  Sem backup de inicializacao." -ForegroundColor DarkGray }
+
+    # Registro (aparencia, throttling de rede, widgets/Teams do W11, etc.)
+    Write-Host ""
+    if (($Global:BackupReg.Count -eq 0) -and ($Global:BackupRegDel.Count -eq 0)) {
+        Write-Host "  Sem backup de registro." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  -- Ajustes de registro --" -ForegroundColor Cyan
+        Write-Host "  $($Global:BackupReg.Count) valor(es) e $($Global:BackupRegDel.Count) chave(s) criada(s) para reverter." -ForegroundColor DarkGray
+        if (Perguntar "Reverter TODOS os ajustes de registro para como estavam?") {
+            $okReg = 0; $erroReg = 0
+            foreach ($chave in @($Global:BackupReg.Keys)) {
+                $b = $Global:BackupReg[$chave]
+                try {
+                    if ($b.Existia) {
+                        if (-not (Test-Path $b.Caminho)) { New-Item -Path $b.Caminho -Force -ErrorAction Stop | Out-Null }
+                        $valor = $b.Valor
+                        switch ($b.Tipo) {
+                            "Binary"      { $valor = [byte[]]($b.Valor) }
+                            "MultiString" { $valor = [string[]]($b.Valor) }
+                        }
+                        New-ItemProperty -Path $b.Caminho -Name $b.Nome -Value $valor -PropertyType $b.Tipo -Force -ErrorAction Stop | Out-Null
+                    } else {
+                        Remove-ItemProperty -Path $b.Caminho -Name $b.Nome -Force -ErrorAction SilentlyContinue
+                    }
+                    $okReg++
+                } catch { $erroReg++; Add-Log "ERRO" "Restaurar registro $chave  ->  $($_.Exception.Message)" }
+            }
+            foreach ($k in @($Global:BackupRegDel.Keys)) {
+                try { if (Test-Path $k) { Remove-Item -Path $k -Recurse -Force -ErrorAction Stop }; $okReg++ }
+                catch { $erroReg++; Add-Log "ERRO" "Apagar chave $k  ->  $($_.Exception.Message)" }
+            }
+            $Global:BackupReg = @{}; $Global:BackupRegDel = @{}; Salvar-BackupReg
+            $extra = if ($erroReg) { ", $erroReg com aviso (veja o log)" } else { "" }
+            Write-Host "   [OK] Registro revertido: $okReg item(ns)$extra." -ForegroundColor Green
+            Add-Log "OK" "Registro revertido ($okReg ok, $erroReg avisos)"
+            Write-Host "   Dica: reinicie o Explorer (opcao 1) ou o PC para ver tudo aplicado." -ForegroundColor Yellow
+        } else { Write-Host "   [--] Registro mantido." -ForegroundColor DarkYellow }
+    }
 }
 
 # ======================================================================
@@ -655,6 +748,8 @@ function Secao-Windows11 {
         $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
         reg add $clsid /f /ve | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
+        # restore (opcao 8) apaga a chave inteira pra voltar ao menu do W11
+        Registrar-KeyParaApagar "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
     }
     Item "Desativar os WIDGETS da barra de tarefas" `
         "Tira o painel de noticias/clima (fica em 2o plano consumindo RAM)." {
