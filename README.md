@@ -1,8 +1,9 @@
 # Script Windows Desempenho
 
-**Otimizador Total** para **Windows 10** — tudo em um único script, com menu,
+**Otimizador Total** para **Windows 10 e 11** — tudo em um único script, com menu,
 para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunta
-**Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**.
+**Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**. Detecta o
+sistema automaticamente e libera os **ajustes do Windows 11** quando for o caso.
 
 ## ⚡ Rodar direto (sem baixar nada)
 
@@ -53,6 +54,7 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 9 - Otimizar disco (HD/SSD automatico)
 10 - Ajustes de rede (DNS rapido + throttling)
 11 - Ver melhora de desempenho (antes x depois)
+12 - Ajustes do Windows 11 (menu classico, widgets, Teams)
 7 - APLICAR TUDO (passa por todas as secoes)
 8 - RESTAURAR (desfazer servicos + inicializacao)
 0 - Sair
@@ -93,21 +95,37 @@ limpa o cache de DNS.
 uso, RAM livre, número de processos e serviços ativos), com setas indicando o
 que melhorou. O topo do menu também exibe esses números **em tempo real**.
 
-**7) Aplicar tudo** — cria ponto de restauração, passa por todas as seções e
-no final mostra automaticamente a comparação de desempenho.
+**12) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
+(detecção automática pelo número do build). Oferece **ponto de restauração**
+antes e inclui: **menu de contexto clássico** (igual ao Win10), **desativar os
+widgets** da barra e **desativar o Chat/Teams** da barra. Em Windows 10, a opção
+avisa que não se aplica.
+
+**7) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
+(inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
+a comparação de desempenho.
 
 **8) Restaurar** — desfaz serviços e inicialização usando os backups.
+
+### Relatório de auditoria
+
+Ao **sair** (opção 0), o script gera um **`otimizador-log_<data>.txt` na Área de
+Trabalho** listando tudo que foi feito (aplicado / pulado / com aviso), com data,
+máquina, usuário e sistema. Serve como **comprovante de serviço** — útil pra quem
+usa em manutenção de clientes.
 
 ## Segurança
 
 - Tudo pede **Y/N** — nada é aplicado sem você confirmar.
-- A opção 7 oferece criar um **ponto de restauração** do Windows no início.
+- As opções 7 e 12 oferecem criar um **ponto de restauração** do Windows no início.
 - Serviços e inicialização têm **backup** e podem ser revertidos (opção 8).
+- Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
+  vão pro relatório — **não quebram a tela** com erro vermelho.
 
 > ⚠️ Não desative serviços essenciais às cegas. Cada item explica o impacto;
 > em caso de dúvida, mantenha (N).
 
 ## Requisitos
 
-- Windows 10
+- Windows 10 ou Windows 11
 - Executar como **Administrador** (o `.bat` já cuida disso)
