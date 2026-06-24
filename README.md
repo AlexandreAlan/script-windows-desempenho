@@ -4,6 +4,27 @@
 para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunta
 **Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**.
 
+## ⚡ Rodar direto (sem baixar nada)
+
+**Jeito mais rápido** — abra o **PowerShell** (menu Iniciar → digite *PowerShell*)
+e cole **uma linha**. Ela baixa o script pro `%TEMP%` e abre **já como Administrador**
+(vai aparecer o aviso do UAC, clique **Sim**):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; $f="$env:TEMP\Otimizador-Total.ps1"; irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 -OutFile $f; Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$f`""
+```
+
+Se você **já estiver num PowerShell como Administrador**, dá pra rodar ainda mais
+curto (sem abrir outra janela):
+
+```powershell
+irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 | iex
+```
+
+> Não instala nada — o script roda na hora e os backups ficam no `%TEMP%`. Para
+> guardar os backups junto do script (e reusar a opção **8 – Restaurar** depois),
+> use o método clássico do `.bat` em **[Como usar](#como-usar)**.
+
 ## Arquivos
 
 | Arquivo | Função |
