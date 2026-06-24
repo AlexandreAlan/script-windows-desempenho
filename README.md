@@ -56,10 +56,11 @@ irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/ma
 6 - Remover apps inuteis (Candy Crush, etc.)
 7 - Otimizar disco (HD/SSD automatico)
 8 - Ajustes de rede (DNS rapido + throttling)
-9 - Ajustes do Windows 11 (menu classico, widgets, Teams)
-10 - Ver melhora de desempenho (antes x depois)
-11 - APLICAR TUDO (passa por todas as secoes)
-12 - RESTAURAR (desfazer servicos + inicializacao + registro)
+9 - Maxima performance (CPU + sistema, monitoring-safe)
+10 - Ajustes do Windows 11 (menu classico, widgets, Teams)
+11 - Ver melhora de desempenho (antes x depois)
+12 - APLICAR TUDO (passa por todas as secoes)
+13 - RESTAURAR (desfazer servicos + inicializacao + registro)
 0 - Sair
 ```
 
@@ -94,21 +95,29 @@ TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
 Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
 limpa o cache de DNS.
 
-**9) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
+**9) Máxima performance** — solta o máximo da máquina **sem fixar a CPU em 100%**:
+libera o **turbo total sob carga** (max processor state 100%) e desliga o **core
+parking**, mas **deixa o clock escalar pra baixo quando ocioso** — assim um
+monitoramento (ex.: **Zabbix**) continua enxergando carga e gargalo reais. Garante
+**todos os núcleos no boot** (o jeito certo, via `bcdedit` — o msconfig só *limita*)
+e aplica ajustes de sistema reversíveis: prioridade pro app em foco, **Game DVR**
+off, **HAGS** e startup sem atraso. Oferece **ponto de restauração** antes.
+
+**10) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
 (detecção automática pelo número do build). Oferece **ponto de restauração**
 antes e inclui: **menu de contexto clássico** (igual ao Win10), **desativar os
 widgets** da barra e **desativar o Chat/Teams** da barra. Em Windows 10, a opção
 avisa que não se aplica.
 
-**10) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
+**11) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
 uso, RAM livre, número de processos e serviços ativos), com setas indicando o
 que melhorou. O topo do menu também exibe esses números **em tempo real**.
 
-**11) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
+**12) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
 (inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
 a comparação de desempenho.
 
-**12) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
+**13) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
 (aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
 seja, dá pra reverter **tudo** que o script alterou.
 
@@ -122,12 +131,23 @@ usa em manutenção de clientes.
 ## Segurança
 
 - Tudo pede **Y/N** — nada é aplicado sem você confirmar.
-- As opções 11 (Aplicar Tudo) e 9 (Windows 11) oferecem criar um **ponto de
-  restauração** do Windows no início.
+- As opções 12 (Aplicar Tudo), 10 (Windows 11) e 9 (Máxima performance) oferecem
+  criar um **ponto de restauração** do Windows no início.
 - Serviços, inicialização **e ajustes de registro** têm **backup** e podem ser
-  revertidos pela opção 12 — nada fica sem volta.
+  revertidos pela opção 13 — nada fica sem volta.
 - Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
   vão pro relatório — **não quebram a tela** com erro vermelho.
+
+### Respeita Política de Grupo (GPO / Active Directory)
+
+Serve tanto pra **PC doméstico** quanto pra **máquina profissional** — com ou sem
+**AD**. O script detecta se a máquina está **em domínio** e, nesse caso, **não mexe
+na área de `\Policies\`** do registro (território da GPO): esses ajustes ficam a
+cargo da Política de Grupo e aparecem como **`[GPO]`** pulados no relatório. Mesmo
+fora de domínio, se um valor de política **já estiver definido** (admin/GPO no
+controle), ele é **respeitado** e não é sobrescrito. Em PC doméstico, sem domínio e
+com a chave livre, os ajustes são aplicados normalmente. O status (**em domínio:
+SIM/NÃO**) também sai no relatório de auditoria.
 
 > ⚠️ Não desative serviços essenciais às cegas. Cada item explica o impacto;
 > em caso de dúvida, mantenha (N).
