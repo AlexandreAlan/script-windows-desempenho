@@ -1,22 +1,28 @@
 <#
 .SYNOPSIS
-    OTIMIZADOR TOTAL - Windows 10 (tudo em um so script)
+    OTIMIZADOR TOTAL - Windows 10 e 11 (tudo em um so script)
     Deixa o sistema o mais leve e rapido possivel, com menu e Y/N por item.
+    Detecta o sistema automaticamente e libera os ajustes do Windows 11.
 
 .DESCRIPTION
     Menu com tudo:
-      1 - Aparencia / efeitos visuais
-      2 - Limpeza (temporarios + lixeira)
-      3 - Programas de inicializacao (startup)
-      4 - Servicos / processos em segundo plano
-      5 - Tarefas agendadas (telemetria/compatibilidade)
-      6 - Remover apps inuteis (Candy Crush, etc.)
-      7 - APLICAR TUDO (passa por todas as secoes)
-      8 - RESTAURAR (servicos + inicializacao)
-      0 - Sair
+      1  - Aparencia / efeitos visuais
+      2  - Limpeza (temporarios + lixeira)
+      3  - Programas de inicializacao (startup)
+      4  - Servicos / processos em segundo plano
+      5  - Tarefas agendadas (telemetria/compatibilidade)
+      6  - Remover apps inuteis (Candy Crush, etc.)
+      9  - Otimizar disco (HD/SSD automatico)
+      10 - Ajustes de rede (DNS rapido + throttling)
+      11 - Ver melhora de desempenho (antes x depois)
+      12 - Ajustes do Windows 11 (menu classico, widgets, Teams)
+      7  - APLICAR TUDO (passa por todas as secoes)
+      8  - RESTAURAR (servicos + inicializacao)
+      0  - Sair
 
     Cada mudanca pergunta Y (sim) / N (nao). Backups sao salvos para
     reverter (servicos em backup-servicos.json, startup no registro).
+    Ao sair, gera um relatorio otimizador-log_<data>.txt na Area de Trabalho.
 
     Execute como ADMINISTRADOR (use o .bat ou clique direito > admin).
     Autor: Alexandre Alan
@@ -68,6 +74,46 @@ if (Test-Path $ArquivoBackupSvc) {
 # guarda o desempenho do INICIO para comparar depois (antes x depois)
 $Global:DesempenhoInicial = $null  # preenchido na 1a vez que o menu abre
 
+# ----------------------------------------------------------------------
+#  Deteccao do sistema (Windows 10 x 11) e LOG DE AUDITORIA
+# ----------------------------------------------------------------------
+# Build >= 22000 = Windows 11. Usado pra liberar a secao de ajustes do W11.
+$Global:BuildSO = [int]([System.Environment]::OSVersion.Version.Build)
+$Global:Win11   = $Global:BuildSO -ge 22000
+$Global:NomeSO  = if ($Global:Win11) { "Windows 11" } else { "Windows 10" }
+
+# Log de auditoria: cada acao registra OK/ERRO/PULADO; ao sair, gera um
+# relatorio otimizador-log_<data>.txt na Area de Trabalho (comprovante de servico).
+$Global:Log = New-Object System.Collections.Generic.List[string]
+function Add-Log {
+    param([string]$Status,[string]$Mensagem)
+    $Global:Log.Add(("[{0}] {1,-7} {2}" -f (Get-Date -Format "HH:mm:ss"), $Status, $Mensagem))
+}
+function Salvar-Log {
+    if ($Global:Log.Count -eq 0) { return }
+    try {
+        $desktop = [Environment]::GetFolderPath('Desktop')
+        if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path $desktop)) { $desktop = $PastaScript }
+        $arq = Join-Path $desktop ("otimizador-log_{0}.txt" -f (Get-Date -Format "yyyy-MM-dd_HHmmss"))
+        $cab = @(
+            "==============================================================",
+            " OTIMIZADOR TOTAL - Relatorio de execucao",
+            " Data:    $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')",
+            " Maquina: $env:COMPUTERNAME   Usuario: $env:USERNAME",
+            " Sistema: $Global:NomeSO (build $Global:BuildSO)",
+            " Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas",
+            "=============================================================="
+        )
+        # @(...) forca array (o $Global:Log e uma List[string]); junta cabecalho + linhas.
+        $conteudo = @($cab) + "" + @($Global:Log)
+        Set-Content -Path $arq -Value $conteudo -Encoding UTF8
+        Write-Host ""
+        Write-Host "  Relatorio salvo em: $arq" -ForegroundColor Cyan
+    } catch {
+        Write-Host "  (nao consegui salvar o relatorio: $($_.Exception.Message))" -ForegroundColor DarkYellow
+    }
+}
+
 function Perguntar {
     param([string]$Texto)
     while ($true) {
@@ -108,8 +154,11 @@ function Linha-Comparacao {
 
 function Definir-Registro {
     param([string]$Caminho,[string]$Nome,$Valor,[string]$Tipo="DWord")
-    if (-not (Test-Path $Caminho)) { New-Item -Path $Caminho -Force | Out-Null }
-    New-ItemProperty -Path $Caminho -Name $Nome -Value $Valor -PropertyType $Tipo -Force | Out-Null
+    # -ErrorAction Stop: se o registro estiver bloqueado (GPO/permissao), o erro
+    # vira "terminating" e e capturado por quem chama (Item) -> vira aviso + log,
+    # nunca uma tela vermelha de erro nao tratado.
+    if (-not (Test-Path $Caminho)) { New-Item -Path $Caminho -Force -ErrorAction Stop | Out-Null }
+    New-ItemProperty -Path $Caminho -Name $Nome -Value $Valor -PropertyType $Tipo -Force -ErrorAction Stop | Out-Null
 }
 
 function Item {
@@ -119,9 +168,16 @@ function Item {
     Write-Host "  $Titulo" -ForegroundColor Cyan
     if ($Descricao) { Write-Host "  $Descricao" -ForegroundColor Gray }
     if (Perguntar "Aplicar?") {
-        try { & $Acao; Write-Host "   [OK] Aplicado." -ForegroundColor Green; $Global:Aplicadas++ }
-        catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
-    } else { Write-Host "   [--] Pulado." -ForegroundColor DarkYellow; $Global:Puladas++ }
+        try {
+            & $Acao
+            Write-Host "   [OK] Aplicado." -ForegroundColor Green
+            $Global:Aplicadas++; Add-Log "OK" $Titulo
+        } catch {
+            # Nao quebra a tela com vermelho: vira aviso amigavel + registra no log.
+            Write-Host "   [AVISO] Nao foi possivel aplicar: $($_.Exception.Message)" -ForegroundColor Yellow
+            Add-Log "ERRO" "$Titulo  ->  $($_.Exception.Message)"
+        }
+    } else { Write-Host "   [--] Pulado." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" $Titulo }
 }
 
 function Salvar-BackupSvc {
@@ -146,9 +202,12 @@ function Desativar-Servico {
             Set-Service -Name $Nome -StartupType Disabled -ErrorAction Stop
             Salvar-BackupSvc
             Write-Host "   [OK] Desativado (backup salvo)." -ForegroundColor Green
-            $Global:Aplicadas++
-        } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
-    } else { Write-Host "   [--] Mantido ligado." -ForegroundColor DarkYellow; $Global:Puladas++ }
+            $Global:Aplicadas++; Add-Log "OK" "Servico desativado: $Amigavel ($Nome)"
+        } catch {
+            Write-Host "   [AVISO] Nao foi possivel desativar: $($_.Exception.Message)" -ForegroundColor Yellow
+            Add-Log "ERRO" "Servico $Nome  ->  $($_.Exception.Message)"
+        }
+    } else { Write-Host "   [--] Mantido ligado." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "Servico mantido: $Nome" }
 }
 
 function Titulo-Secao {
@@ -255,9 +314,12 @@ function Secao-Startup {
                     Definir-Registro $BackupStartup $p.Name "$($chave.Origem)|$($chave.Caminho)|$($p.Value)" "String"
                     Remove-ItemProperty -Path $chave.Caminho -Name $p.Name -Force -ErrorAction Stop
                     Write-Host "   [OK] Desativado (backup salvo)." -ForegroundColor Green
-                    $Global:Aplicadas++
-                } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
-            } else { Write-Host "   [--] Mantido." -ForegroundColor DarkYellow; $Global:Puladas++ }
+                    $Global:Aplicadas++; Add-Log "OK" "Inicializacao desativada: $($p.Name) [$($chave.Origem)]"
+                } catch {
+                    Write-Host "   [AVISO] Nao foi possivel desativar: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Add-Log "ERRO" "Inicializacao $($p.Name)  ->  $($_.Exception.Message)"
+                }
+            } else { Write-Host "   [--] Mantido." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "Inicializacao mantida: $($p.Name)" }
         }
     }
     if (-not $achou) { Write-Host "   Nenhum programa de inicializacao encontrado." -ForegroundColor DarkGray }
@@ -372,9 +434,12 @@ function Secao-Bloatware {
             try {
                 Remove-AppxPackage -Package $app.PackageFullName -ErrorAction Stop
                 Write-Host "   [OK] Removido." -ForegroundColor Green
-                $Global:Aplicadas++
-            } catch { Write-Host "   [ERRO] $($_.Exception.Message)" -ForegroundColor Red }
-        } else { Write-Host "   [--] Mantido." -ForegroundColor DarkYellow; $Global:Puladas++ }
+                $Global:Aplicadas++; Add-Log "OK" "App removido: $($app.Name)"
+            } catch {
+                Write-Host "   [AVISO] Nao foi possivel remover: $($_.Exception.Message)" -ForegroundColor Yellow
+                Add-Log "ERRO" "App $($app.Name)  ->  $($_.Exception.Message)"
+            }
+        } else { Write-Host "   [--] Mantido." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "App mantido: $($app.Name)" }
     }
     Write-Host ""
     Write-Host "   Obs: apps removidos podem ser reinstalados pela Microsoft Store." -ForegroundColor DarkGray
@@ -571,6 +636,39 @@ function Ponto-Restauracao {
 }
 
 # ======================================================================
+#  SECAO 12 - AJUSTES DO WINDOWS 11
+# ======================================================================
+function Secao-Windows11 {
+    Titulo-Secao "12) AJUSTES DO WINDOWS 11"
+    if (-not $Global:Win11) {
+        Write-Host "   Este PC e $Global:NomeSO - esta secao e exclusiva do Windows 11." -ForegroundColor DarkYellow
+        Add-Log "INFO" "Secao W11 ignorada (sistema: $Global:NomeSO)"
+        return
+    }
+    Write-Host "  Ajustes especificos do W11. Reversiveis (ponto de restauracao / Windows)." -ForegroundColor Gray
+    # Estes ajustes mexem no registro e NAO sao desfeitos pela opcao 8 (Restaurar),
+    # entao oferecemos um ponto de restauracao do Windows antes.
+    Ponto-Restauracao
+
+    Item "Menu de contexto CLASSICO (igual ao Windows 10)" `
+        "Volta o menu completo do botao direito, sem o 'Mostrar mais opcoes'." {
+        $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+        reg add $clsid /f /ve | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
+    }
+    Item "Desativar os WIDGETS da barra de tarefas" `
+        "Tira o painel de noticias/clima (fica em 2o plano consumindo RAM)." {
+        Definir-Registro $RegAdvanced "TaskbarDa" 0
+        Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" "AllowNewsAndInterests" 0
+    }
+    Item "Desativar o CHAT (Teams) da barra de tarefas" `
+        "Remove o icone do Microsoft Teams (consumidor) da barra." {
+        Definir-Registro $RegAdvanced "TaskbarMn" 0
+    }
+    Item "Reiniciar o Explorer para aplicar os ajustes do W11" "" { Reiniciar-Explorer }
+}
+
+# ======================================================================
 #  MENU PRINCIPAL
 # ======================================================================
 function Mostrar-Menu {
@@ -582,7 +680,7 @@ function Mostrar-Menu {
 
     Write-Host ""
     Write-Host "  ==============================================================" -ForegroundColor Magenta
-    Write-Host "          OTIMIZADOR TOTAL - WINDOWS 10 (leve e rapido)" -ForegroundColor White
+    Write-Host ("          OTIMIZADOR TOTAL - {0} (leve e rapido)" -f $Global:NomeSO.ToUpper()) -ForegroundColor White
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host ("   DESEMPENHO AGORA:  RAM em uso {0}%  | Livre {1} GB  | Processos {2}  | Servicos ativos {3}" -f `
         $agora.RamUsoPct, $agora.RamLivreGB, $agora.Processos, $agora.ServicosAtivos) -ForegroundColor Cyan
@@ -598,6 +696,7 @@ function Mostrar-Menu {
     Write-Host "   9 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
     Write-Host "  10 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
     Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
+    Write-Host ("  12 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
     Write-Host "   7 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "   8 - RESTAURAR (desfazer servicos + inicializacao)" -ForegroundColor Yellow
     Write-Host "   0 - Sair" -ForegroundColor Gray
@@ -622,6 +721,7 @@ do {
         "9" { Secao-Disco; Pause }
         "10" { Secao-Rede; Pause }
         "11" { Secao-Comparar; Pause }
+        "12" { Secao-Windows11; Pause }
         "7" {
             Ponto-Restauracao
             Secao-Aparencia
@@ -632,6 +732,7 @@ do {
             Secao-Bloatware
             Secao-Disco
             Secao-Rede
+            Secao-Windows11
             Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
             Secao-Comparar
             Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
@@ -645,4 +746,5 @@ do {
 
 Write-Host ""
 Write-Host "  Fim. Aplicadas: $Global:Aplicadas | Puladas: $Global:Puladas" -ForegroundColor Green
+Salvar-Log   # gera o relatorio de auditoria (otimizador-log_<data>.txt) na Area de Trabalho
 Write-Host "  Recomendado REINICIAR o computador." -ForegroundColor Yellow
