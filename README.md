@@ -1,24 +1,49 @@
 # Script Windows Desempenho
 
-**Otimizador Total** para **Windows 10** — tudo em um único script, com menu,
-para deixar o sistema o mais **leve e rápido** possível. Cada mudança pergunta
-**Y (sim)** ou **N (não)** antes de aplicar, e tudo é **reversível**.
+**Otimizador Total** para **Windows 10** — deixa o sistema o mais **leve e
+rápido** possível. Disponível em **duas versões**: uma **gráfica (janela
+bonita, recomendada)** e a clássica de **menu no terminal**. Tudo é
+**reversível** e nada é aplicado sem você confirmar.
+
+## Versão gráfica (recomendada) 🖥️
+
+Uma **janela** com tema escuro onde cada otimização aparece como um item
+**colorido por risco**, indicando o que é bom desativar ou não:
+
+- 🟢 **Verde — SEGURO:** pode desativar tranquilo (telemetria, SysMain, Fax…).
+- 🟡 **Amarelo — CUIDADO:** só se você **não usar** aquele recurso (Xbox,
+  geolocalização, teclado de toque…).
+- 🔴 **Vermelho — RISCO:** só desative se souber o que faz (Spooler de
+  impressão, Windows Search).
+
+Marque os itens que quiser (os recomendados já vêm marcados), clique em
+**Aplicar selecionados** e acompanhe o log. Tem botões para **marcar
+recomendados**, **criar ponto de restauração**, **restaurar (desfazer)** e um
+**painel de desempenho ao vivo** (RAM, processos, serviços) no topo.
+
+> 👉 Dê **duplo-clique em `Otimizador-GUI.bat`** e aceite o aviso (UAC).
 
 ## Arquivos
 
 | Arquivo | Função |
 |---|---|
-| `Otimizador-Total.ps1` | **O script completo** (menu com tudo) |
-| `Otimizador-Total.bat` | Duplo-clique → abre já como **Administrador** |
+| `Otimizador-GUI.ps1` | **Versão gráfica** (janela WPF, recomendada) |
+| `Otimizador-GUI.bat` | Duplo-clique → abre a **janela** como Administrador |
+| `Otimizador-Total.ps1` | Versão de **menu no terminal** (clássica) |
+| `Otimizador-Total.bat` | Duplo-clique → abre o **menu** como Administrador |
 
-> O backup dos serviços fica em `backup-servicos.json` e o da inicialização no
-> registro — ambos usados pela opção **8 (Restaurar)**.
+> Os backups (`backup-servicos.json` + registro) são **compartilhados** pelas
+> duas versões — você pode aplicar na GUI e restaurar no menu, ou vice-versa.
 
 ## Como usar
 
-1. Baixe `Otimizador-Total.ps1` e `Otimizador-Total.bat` para o seu PC.
-2. Dê **duplo-clique em `Otimizador-Total.bat`** e aceite o aviso (UAC).
-3. Escolha uma opção do menu. Em cada item, digite **Y** ou **N**.
+**Versão gráfica:** duplo-clique em `Otimizador-GUI.bat`, aceite o UAC, marque
+os itens e clique em **Aplicar selecionados**.
+
+**Versão de menu:**
+
+1. Dê **duplo-clique em `Otimizador-Total.bat`** e aceite o aviso (UAC).
+2. Escolha uma opção do menu. Em cada item, digite **Y** ou **N**.
 
 ## Menu
 
