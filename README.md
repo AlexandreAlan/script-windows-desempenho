@@ -1,9 +1,13 @@
 # Script Windows Desempenho
 
-**Otimizador Total** para **Windows 10** — deixa o sistema o mais **leve e
-rápido** possível. Disponível em **duas versões**: uma **gráfica (janela
-bonita, recomendada)** e a clássica de **menu no terminal**. Tudo é
-**reversível** e nada é aplicado sem você confirmar.
+[![Lint PowerShell](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml)
+
+**Otimizador Total** para **Windows 10 e 11** — deixa o sistema o mais **leve
+e rápido** possível. Disponível em **duas versões**: uma **gráfica (janela
+bonita, recomendada)** e a clássica de **menu no terminal**. Cada mudança
+pergunta antes de aplicar, tudo é **reversível**, e a versão de menu detecta o
+sistema automaticamente e libera os **ajustes do Windows 11** quando for o
+caso.
 
 ## Versão gráfica (recomendada) 🖥️
 
@@ -23,6 +27,28 @@ recomendados**, **criar ponto de restauração**, **restaurar (desfazer)** e um
 
 > 👉 Dê **duplo-clique em `Otimizador-GUI.bat`** e aceite o aviso (UAC).
 
+## ⚡ Rodar a versão de menu direto (sem baixar nada)
+
+**Jeito mais rápido** para a versão de menu — abra o **PowerShell** (menu
+Iniciar → digite *PowerShell*) e cole **uma linha**. Ela baixa o script pro
+`%TEMP%` e abre **já como Administrador** (vai aparecer o aviso do UAC,
+clique **Sim**):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; $f="$env:TEMP\Otimizador-Total.ps1"; irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 -OutFile $f; Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$f`""
+```
+
+Se você **já estiver num PowerShell como Administrador**, dá pra rodar ainda mais
+curto (sem abrir outra janela):
+
+```powershell
+irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 | iex
+```
+
+> Não instala nada — o script roda na hora e os backups ficam no `%TEMP%`. Para
+> guardar os backups junto do script (e reusar a opção **13 – Restaurar** depois),
+> use o método clássico do `.bat` em **[Como usar](#como-usar)**.
+
 ## Arquivos
 
 | Arquivo | Função |
@@ -32,7 +58,9 @@ recomendados**, **criar ponto de restauração**, **restaurar (desfazer)** e um
 | `Otimizador-Total.ps1` | Versão de **menu no terminal** (clássica) |
 | `Otimizador-Total.bat` | Duplo-clique → abre o **menu** como Administrador |
 
-> Os backups (`backup-servicos.json` + registro) são **compartilhados** pelas
+> Os backups ficam em `backup-servicos.json` (serviços), no registro
+> (inicialização) e em `backup-registro.json` (ajustes de registro) — usados
+> pela opção **13 (Restaurar)** para desfazer. São **compartilhados** pelas
 > duas versões — você pode aplicar na GUI e restaurar no menu, ou vice-versa.
 
 ## Como usar
@@ -54,11 +82,13 @@ os itens e clique em **Aplicar selecionados**.
 4 - Servicos / processos em segundo plano
 5 - Tarefas agendadas (telemetria)
 6 - Remover apps inuteis (Candy Crush, etc.)
-9 - Otimizar disco (HD/SSD automatico)
-10 - Ajustes de rede (DNS rapido + throttling)
+7 - Otimizar disco (HD/SSD automatico)
+8 - Ajustes de rede (DNS rapido + throttling)
+9 - Maxima performance (CPU + sistema, monitoring-safe)
+10 - Ajustes do Windows 11 (menu classico, widgets, Teams)
 11 - Ver melhora de desempenho (antes x depois)
-7 - APLICAR TUDO (passa por todas as secoes)
-8 - RESTAURAR (desfazer servicos + inicializacao)
+12 - APLICAR TUDO (passa por todas as secoes)
+13 - RESTAURAR (desfazer servicos + inicializacao + registro)
 0 - Sair
 ```
 
@@ -86,32 +116,71 @@ compatibilidade.
 **6) Remover apps inúteis** — lista bloatware instalado (Candy Crush, jogos
 King, 3D Builder, etc.) e pergunta um por um. Apps essenciais não entram.
 
-**9) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
+**7) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
 TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
 
-**10) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
+**8) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
 Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
 limpa o cache de DNS.
+
+**9) Máxima performance** — solta o máximo da máquina **sem fixar a CPU em 100%**:
+libera o **turbo total sob carga** (max processor state 100%) e desliga o **core
+parking**, mas **deixa o clock escalar pra baixo quando ocioso** — assim um
+monitoramento (ex.: **Zabbix**) continua enxergando carga e gargalo reais. Garante
+**todos os núcleos no boot** (o jeito certo, via `bcdedit` — o msconfig só *limita*)
+e aplica ajustes de sistema reversíveis: prioridade pro app em foco, **Game DVR**
+off, **HAGS** e startup sem atraso. Oferece **ponto de restauração** antes.
+
+**10) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
+(detecção automática pelo número do build). Oferece **ponto de restauração**
+antes e inclui: **menu de contexto clássico** (igual ao Win10), **desativar os
+widgets** da barra e **desativar o Chat/Teams** da barra. Em Windows 10, a opção
+avisa que não se aplica.
 
 **11) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
 uso, RAM livre, número de processos e serviços ativos), com setas indicando o
 que melhorou. O topo do menu também exibe esses números **em tempo real**.
 
-**7) Aplicar tudo** — cria ponto de restauração, passa por todas as seções e
-no final mostra automaticamente a comparação de desempenho.
+**12) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
+(inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
+a comparação de desempenho.
 
-**8) Restaurar** — desfaz serviços e inicialização usando os backups.
+**13) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
+(aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
+seja, dá pra reverter **tudo** que o script alterou.
+
+### Relatório de auditoria
+
+Ao **sair** (opção 0), o script gera um **`otimizador-log_<data>.txt` na Área de
+Trabalho** listando tudo que foi feito (aplicado / pulado / com aviso), com data,
+máquina, usuário e sistema. Serve como **comprovante de serviço** — útil pra quem
+usa em manutenção de clientes.
 
 ## Segurança
 
 - Tudo pede **Y/N** — nada é aplicado sem você confirmar.
-- A opção 7 oferece criar um **ponto de restauração** do Windows no início.
-- Serviços e inicialização têm **backup** e podem ser revertidos (opção 8).
+- As opções 12 (Aplicar Tudo), 10 (Windows 11) e 9 (Máxima performance) oferecem
+  criar um **ponto de restauração** do Windows no início.
+- Serviços, inicialização **e ajustes de registro** têm **backup** e podem ser
+  revertidos pela opção 13 — nada fica sem volta.
+- Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
+  vão pro relatório — **não quebram a tela** com erro vermelho.
+
+### Respeita Política de Grupo (GPO / Active Directory)
+
+Serve tanto pra **PC doméstico** quanto pra **máquina profissional** — com ou sem
+**AD**. O script detecta se a máquina está **em domínio** e, nesse caso, **não mexe
+na área de `\Policies\`** do registro (território da GPO): esses ajustes ficam a
+cargo da Política de Grupo e aparecem como **`[GPO]`** pulados no relatório. Mesmo
+fora de domínio, se um valor de política **já estiver definido** (admin/GPO no
+controle), ele é **respeitado** e não é sobrescrito. Em PC doméstico, sem domínio e
+com a chave livre, os ajustes são aplicados normalmente. O status (**em domínio:
+SIM/NÃO**) também sai no relatório de auditoria.
 
 > ⚠️ Não desative serviços essenciais às cegas. Cada item explica o impacto;
 > em caso de dúvida, mantenha (N).
 
 ## Requisitos
 
-- Windows 10
+- Windows 10 ou Windows 11
 - Executar como **Administrador** (o `.bat` já cuida disso)

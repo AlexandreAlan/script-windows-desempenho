@@ -1,0 +1,40 @@
+name: Lint PowerShell
+
+# Valida o script a cada push/PR: parser (sintaxe) + PSScriptAnalyzer (boas praticas).
+# Roda no Windows pra refletir o ambiente real de execucao.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar sintaxe (parser do PowerShell)
+        shell: pwsh
+        run: |
+          $tokens = $null; $erros = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/Otimizador-Total.ps1", [ref]$tokens, [ref]$erros) | Out-Null
+          if ($erros -and $erros.Count -gt 0) {
+            $erros | ForEach-Object { Write-Host "ERRO: $($_.Extent.StartLineNumber): $($_.Message)" }
+            throw "Erros de sintaxe encontrados."
+          }
+          Write-Host "Sintaxe OK."
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+          # PSAvoidUsingWriteHost: esta ferramenta e um menu interativo de console,
+          # entao Write-Host e o correto aqui. Demais regras valem.
+          $r = Invoke-ScriptAnalyzer -Path ./Otimizador-Total.ps1 `
+                 -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+          if ($r) { $r | Format-Table -AutoSize RuleName, Severity, Line, Message }
+          $erros = @($r | Where-Object Severity -eq 'Error')
+          if ($erros.Count -gt 0) { throw "PSScriptAnalyzer encontrou $($erros.Count) erro(s)." }
+          Write-Host "PSScriptAnalyzer OK (sem erros)."
