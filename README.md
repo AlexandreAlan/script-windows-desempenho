@@ -184,3 +184,27 @@ SIM/NÃO**) também sai no relatório de auditoria.
 
 - Windows 10 ou Windows 11
 - Executar como **Administrador** (o `.bat` já cuida disso)
+
+## Auto-hospedar (Docker)
+
+Prefere servir os scripts do seu próprio servidor em vez de depender do
+`raw.githubusercontent.com`? A imagem publicada em
+`ghcr.io/alexandrealan/script-windows-desempenho` serve os quatro arquivos
+(`.ps1` + `.bat`) via nginx:
+
+```bash
+docker compose up -d
+```
+
+Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
+`docker-compose.yml` conforme necessário.
+
+## Histórico de versões
+
+- **v1.0.0** — primeira versão estável: menu de terminal completo (13 opções,
+  restauração total) + versão gráfica (WPF), CI de lint (sintaxe +
+  PSScriptAnalyzer) para as duas versões, e mirror Docker auto-hospedável.
+
+## Licença
+
+[MIT](LICENSE) — use, modifique e redistribua livremente.
