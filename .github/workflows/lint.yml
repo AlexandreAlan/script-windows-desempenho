@@ -17,24 +17,31 @@ jobs:
       - name: Validar sintaxe (parser do PowerShell)
         shell: pwsh
         run: |
-          $tokens = $null; $erros = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "$PWD/Otimizador-Total.ps1", [ref]$tokens, [ref]$erros) | Out-Null
-          if ($erros -and $erros.Count -gt 0) {
-            $erros | ForEach-Object { Write-Host "ERRO: $($_.Extent.StartLineNumber): $($_.Message)" }
-            throw "Erros de sintaxe encontrados."
+          $scripts = @('Otimizador-Total.ps1', 'Otimizador-GUI.ps1')
+          foreach ($s in $scripts) {
+            $tokens = $null; $erros = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              "$PWD/$s", [ref]$tokens, [ref]$erros) | Out-Null
+            if ($erros -and $erros.Count -gt 0) {
+              $erros | ForEach-Object { Write-Host "ERRO ($s): $($_.Extent.StartLineNumber): $($_.Message)" }
+              throw "Erros de sintaxe encontrados em $s."
+            }
+            Write-Host "Sintaxe OK: $s"
           }
-          Write-Host "Sintaxe OK."
 
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
-          # PSAvoidUsingWriteHost: esta ferramenta e um menu interativo de console,
-          # entao Write-Host e o correto aqui. Demais regras valem.
-          $r = Invoke-ScriptAnalyzer -Path ./Otimizador-Total.ps1 `
-                 -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
-          if ($r) { $r | Format-Table -AutoSize RuleName, Severity, Line, Message }
-          $erros = @($r | Where-Object Severity -eq 'Error')
-          if ($erros.Count -gt 0) { throw "PSScriptAnalyzer encontrou $($erros.Count) erro(s)." }
+          $scripts = @('Otimizador-Total.ps1', 'Otimizador-GUI.ps1')
+          $totalErros = 0
+          foreach ($s in $scripts) {
+            # PSAvoidUsingWriteHost: esta ferramenta e um menu/janela interativos,
+            # entao Write-Host e o correto aqui. Demais regras valem.
+            $r = Invoke-ScriptAnalyzer -Path "./$s" `
+                   -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+            if ($r) { Write-Host "--- $s ---"; $r | Format-Table -AutoSize RuleName, Severity, Line, Message }
+            $totalErros += @($r | Where-Object Severity -eq 'Error').Count
+          }
+          if ($totalErros -gt 0) { throw "PSScriptAnalyzer encontrou $totalErros erro(s)." }
           Write-Host "PSScriptAnalyzer OK (sem erros)."
