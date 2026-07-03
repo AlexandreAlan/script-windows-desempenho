@@ -1,0 +1,7 @@
+services:
+  otimizador:
+    image: ghcr.io/alexandrealan/script-windows-desempenho:latest
+    container_name: script-windows-desempenho
+    restart: unless-stopped
+    ports:
+      - "8081:80"
