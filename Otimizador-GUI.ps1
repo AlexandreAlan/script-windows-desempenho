@@ -109,6 +109,36 @@ function Add-Tweak {
     })
 }
 
+# ---- DIAGNOSTICO E SAUDE DO SISTEMA (verde/amarelo) ----
+Add-Tweak "Diagnostico e saude do sistema" "Verificar espaco em disco, RAM e saude fisica do(s) disco(s)" `
+    "So le informacoes, nao altera nada" "Verde" $true {
+    $partes = @()
+    $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
+    foreach ($v in $volumes) {
+        $pct = if ($v.Size -gt 0) { [math]::Round(($v.SizeRemaining / $v.Size) * 100, 1) } else { 0 }
+        $partes += "Disco $($v.DriveLetter): $pct% livre"
+    }
+    $os = Get-CimInstance Win32_OperatingSystem
+    $ramPct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
+    $partes += "RAM: $ramPct% livre"
+    try {
+        foreach ($d in (Get-PhysicalDisk -ErrorAction Stop)) { $partes += "Disco $($d.DeviceId) ($($d.MediaType)): $($d.HealthStatus)" }
+    } catch { }
+    $partes -join " | "
+}
+Add-Tweak "Diagnostico e saude do sistema" "Verificar arquivos de sistema (SFC /scannow)" `
+    "Pode demorar varios minutos; so verifica/repara, nao apaga nada seu" "Amarelo" $false {
+    sfc /scannow
+    if ($LASTEXITCODE -ne 0) { throw "SFC terminou com codigo $LASTEXITCODE" }
+    "SFC concluido (codigo 0) - veja a saida na janela do console atras"
+}
+Add-Tweak "Diagnostico e saude do sistema" "Reparar imagem do Windows (DISM /RestoreHealth)" `
+    "Pode demorar bastante e baixar arquivos via Windows Update" "Amarelo" $false {
+    DISM /Online /Cleanup-Image /RestoreHealth
+    if ($LASTEXITCODE -ne 0) { throw "RestoreHealth terminou com codigo $LASTEXITCODE" }
+    "RestoreHealth concluido (codigo 0) - rode o SFC de novo para confirmar"
+}
+
 # ---- APARENCIA / EFEITOS VISUAIS (verde) ----
 Add-Tweak "Aparencia / efeitos visuais" "Ajustar para MELHOR DESEMPENHO (desliga efeitos)" `
     "Visual fica mais 'cru', porem bem mais leve" "Verde" $true {

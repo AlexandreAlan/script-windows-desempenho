@@ -89,6 +89,7 @@ os itens e clique em **Aplicar selecionados**.
 11 - Ver melhora de desempenho (antes x depois)
 12 - APLICAR TUDO (passa por todas as secoes)
 13 - RESTAURAR (desfazer servicos + inicializacao + registro)
+14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)
 0 - Sair
 ```
 
@@ -149,6 +150,16 @@ a comparação de desempenho.
 (aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
 seja, dá pra reverter **tudo** que o script alterou.
 
+**14) Diagnóstico e saúde do sistema** — roda **antes** de otimizar, pra saber se
+algum problema é da máquina e não do script (útil como comprovante em atendimento a
+cliente). Mostra **espaço livre em disco**, **RAM livre** e a **saúde física de cada
+disco** (S.M.A.R.T., via `Get-PhysicalDisk` — Healthy/Warning/Unhealthy), e oferece
+rodar **`SFC /scannow`** (verifica/repara arquivos de sistema) e **`DISM /ScanHealth`
++ `/RestoreHealth`** (verifica/repara a imagem do Windows, pode baixar arquivos via
+Windows Update). Só lê informações e pergunta antes de cada verificação/reparo — pode
+demorar alguns minutos, por isso **não entra sozinho** na opção 12 (só se você
+confirmar cada passo).
+
 ### Relatório de auditoria
 
 Ao **sair** (opção 0), o script gera um **`otimizador-log_<data>.txt` na Área de
@@ -165,6 +176,9 @@ usa em manutenção de clientes.
   revertidos pela opção 13 — nada fica sem volta.
 - Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
   vão pro relatório — **não quebram a tela** com erro vermelho.
+- Os reparos da opção 14 (**SFC** e **DISM /RestoreHealth**) mexem em **arquivos de
+  sistema**, não em registro — por isso **não são desfeitos** pela opção 13. Por
+  garantia, a opção 14 também oferece **ponto de restauração** antes.
 
 ### Respeita Política de Grupo (GPO / Active Directory)
 
@@ -201,6 +215,9 @@ Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
 
 ## Histórico de versões
 
+- **v1.1.0** — nova opção **14 (Diagnóstico e saúde do sistema)** nas duas versões:
+  espaço em disco, RAM, saúde física do disco (S.M.A.R.T.) e verificação/reparo de
+  arquivos de sistema (SFC + DISM). Recomendado rodar antes de otimizar.
 - **v1.0.0** — primeira versão estável: menu de terminal completo (13 opções,
   restauração total) + versão gráfica (WPF), CI de lint (sintaxe +
   PSScriptAnalyzer) para as duas versões, e mirror Docker auto-hospedável.

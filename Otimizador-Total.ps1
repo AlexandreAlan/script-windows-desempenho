@@ -19,6 +19,7 @@
       11 - Ver melhora de desempenho (antes x depois)
       12 - APLICAR TUDO (passa por todas as secoes)
       13 - RESTAURAR (servicos + inicializacao + registro)
+      14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)
       0  - Sair
 
     Cada mudanca pergunta Y (sim) / N (nao). Backups sao salvos para
@@ -625,6 +626,82 @@ function Secao-Rede {
 }
 
 # ======================================================================
+#  SECAO 14 - DIAGNOSTICO E SAUDE DO SISTEMA
+# ======================================================================
+function Secao-Diagnostico {
+    Titulo-Secao "14) DIAGNOSTICO E SAUDE DO SISTEMA"
+    Write-Host "  So verifica (nao altera nada, exceto se voce pedir reparo). Pode demorar alguns minutos." -ForegroundColor Gray
+    # SFC/DISM reparam arquivos de sistema, nao registro - a opcao 13 nao desfaz isso.
+    Ponto-Restauracao
+
+    Write-Host ""; Write-Host "  >>> ESPACO EM DISCO E MEMORIA <<<" -ForegroundColor Green
+    $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
+    foreach ($v in $volumes) {
+        $livrePct = if ($v.Size -gt 0) { [math]::Round(($v.SizeRemaining / $v.Size) * 100, 1) } else { 0 }
+        $cor = if ($livrePct -lt 10) { "Red" } elseif ($livrePct -lt 20) { "Yellow" } else { "Green" }
+        Write-Host ("   Disco {0}:  {1} GB livres de {2} GB  ({3}% livre)" -f `
+            $v.DriveLetter, [math]::Round($v.SizeRemaining/1GB,1), [math]::Round($v.Size/1GB,1), $livrePct) -ForegroundColor $cor
+        if ($livrePct -lt 10) { Add-Log "AVISO" "Disco $($v.DriveLetter): espaco critico ($livrePct% livre)" }
+    }
+    $os = Get-CimInstance Win32_OperatingSystem
+    $ramLivrePct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
+    $corRam = if ($ramLivrePct -lt 10) { "Red" } elseif ($ramLivrePct -lt 20) { "Yellow" } else { "Green" }
+    Write-Host ("   RAM: {0} GB livres de {1} GB  ({2}% livre)" -f `
+        [math]::Round($os.FreePhysicalMemory/1MB,2), [math]::Round($os.TotalVisibleMemorySize/1MB,2), $ramLivrePct) -ForegroundColor $corRam
+    if ($ramLivrePct -lt 10) { Add-Log "AVISO" "RAM critica: $ramLivrePct% livre" }
+
+    Write-Host ""; Write-Host "  >>> SAUDE FISICA DO(S) DISCO(S) <<<" -ForegroundColor Green
+    try {
+        $discosFisicos = Get-PhysicalDisk -ErrorAction Stop
+        foreach ($d in $discosFisicos) {
+            $cor = switch ($d.HealthStatus) { "Healthy" { "Green" } "Warning" { "Yellow" } default { "Red" } }
+            Write-Host ("   Disco {0} ({1}, {2}): {3}" -f $d.DeviceId, $d.FriendlyName, $d.MediaType, $d.HealthStatus) -ForegroundColor $cor
+            if ($d.HealthStatus -ne "Healthy") { Add-Log "AVISO" "Disco $($d.DeviceId) ($($d.FriendlyName)): $($d.HealthStatus)" }
+        }
+    } catch { Write-Host "   Nao foi possivel ler a saude fisica dos discos." -ForegroundColor DarkGray }
+
+    Write-Host ""; Write-Host "  >>> ARQUIVOS DE SISTEMA (SFC + DISM) <<<" -ForegroundColor Green
+    Write-Host "   A saida do comando aparece abaixo, na hora." -ForegroundColor Gray
+    if (Perguntar "Rodar verificacao de arquivos de sistema (SFC /scannow)?") {
+        sfc /scannow
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "   [OK] SFC concluido (veja acima se encontrou/corrigiu algo)." -ForegroundColor Green
+            Add-Log "OK" "SFC /scannow concluido"
+        } else {
+            Write-Host "   [AVISO] SFC terminou com codigo $LASTEXITCODE." -ForegroundColor Yellow
+            Add-Log "AVISO" "SFC /scannow codigo $LASTEXITCODE"
+        }
+        $Global:Aplicadas++
+    } else { Write-Host "   [--] SFC nao executado." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "SFC /scannow" }
+
+    Write-Host ""
+    if (Perguntar "Rodar checagem de saude da imagem do Windows (DISM /ScanHealth)?") {
+        DISM /Online /Cleanup-Image /ScanHealth
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "   [OK] DISM ScanHealth concluido." -ForegroundColor Green
+            Add-Log "OK" "DISM ScanHealth concluido"
+        } else {
+            Write-Host "   [AVISO] DISM ScanHealth terminou com codigo $LASTEXITCODE." -ForegroundColor Yellow
+            Add-Log "AVISO" "DISM ScanHealth codigo $LASTEXITCODE"
+        }
+        $Global:Aplicadas++
+
+        Write-Host ""
+        if (Perguntar "Reparar a imagem agora (DISM /RestoreHealth - baixa arquivos via Windows Update se precisar)?") {
+            DISM /Online /Cleanup-Image /RestoreHealth
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "   [OK] RestoreHealth concluido. Rode o SFC de novo para confirmar." -ForegroundColor Green
+                Add-Log "OK" "DISM RestoreHealth concluido"
+            } else {
+                Write-Host "   [AVISO] RestoreHealth terminou com codigo $LASTEXITCODE." -ForegroundColor Yellow
+                Add-Log "AVISO" "DISM RestoreHealth codigo $LASTEXITCODE"
+            }
+            $Global:Aplicadas++
+        } else { Write-Host "   [--] RestoreHealth nao executado." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "DISM RestoreHealth" }
+    } else { Write-Host "   [--] DISM nao executado." -ForegroundColor DarkYellow; $Global:Puladas++; Add-Log "PULADO" "DISM ScanHealth" }
+}
+
+# ======================================================================
 #  SECAO 11 - COMPARAR DESEMPENHO (ANTES x DEPOIS)
 # ======================================================================
 function Secao-Comparar {
@@ -866,6 +943,7 @@ function Mostrar-Menu {
     Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
     Write-Host "  12 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "  13 - RESTAURAR (desfazer servicos + inicializacao + registro)" -ForegroundColor Yellow
+    Write-Host "  14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)" -ForegroundColor Gray
     Write-Host "   0 - Sair" -ForegroundColor Gray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas" -ForegroundColor DarkGray
@@ -892,6 +970,7 @@ do {
         "11" { Secao-Comparar; Pause }
         "12" {
             Ponto-Restauracao
+            Secao-Diagnostico
             Secao-Aparencia
             Secao-Limpeza
             Secao-Startup
@@ -908,6 +987,7 @@ do {
             Pause
         }
         "13" { Secao-Restaurar; Pause }
+        "14" { Secao-Diagnostico; Pause }
         "0" { Write-Host "  Saindo..." -ForegroundColor Gray }
         default { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
