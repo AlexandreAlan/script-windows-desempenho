@@ -1,6 +1,7 @@
 # Script Windows Desempenho
 
 [![Lint PowerShell](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml)
+[![Screenshot GUI](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/screenshot.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/screenshot.yml)
 
 **Otimizador Total** para **Windows 10 e 11** — deixa o sistema o mais **leve
 e rápido** possível. Disponível em **duas versões**: uma **gráfica (janela
@@ -10,6 +11,13 @@ sistema automaticamente e libera os **ajustes do Windows 11** quando for o
 caso.
 
 ## Versão gráfica (recomendada) 🖥️
+
+![Otimizador Total - versão gráfica](docs/screenshot-gui.png)
+
+> Print tirado automaticamente pelo CI (workflow **Screenshot GUI**) a cada
+> mudança na GUI — a janela é aberta de verdade num Windows real, não é
+> montagem. Detecta o Windows 10/11 sozinha (no print acima, rodou num
+> Windows 11 e mostrou certinho).
 
 Uma **janela** com tema escuro onde cada otimização aparece como um item
 **colorido por risco**, indicando o que é bom desativar ou não:
