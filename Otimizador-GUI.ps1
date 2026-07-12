@@ -1,17 +1,23 @@
 <#
 .SYNOPSIS
-    OTIMIZADOR TOTAL - GUI (Windows 10) - versao grafica em WPF.
-    Janela bonita com cores por RISCO (verde/amarelo/vermelho) dizendo
-    o que e seguro desativar ou nao. Marque o que quiser e clique em Aplicar.
+    OTIMIZADOR TOTAL - GUI (Windows 10 e 11) - versao grafica em WPF.
+    Detecta o sistema automaticamente (titulo/subtitulo mostram o SO real) e
+    libera a secao "Ajustes do Windows 11" so quando aplicavel. Janela bonita
+    com cores por RISCO (verde/amarelo/vermelho) dizendo o que e seguro
+    desativar ou nao. Marque o que quiser e clique em Aplicar.
 
 .DESCRIPTION
     - Verde   = SEGURO (pode desativar tranquilo)
     - Amarelo = CUIDADO (so se nao usar aquele recurso)
     - Vermelho= RISCO   (so desative se souber o que faz)
 
-    Tudo e reversivel. Os backups sao gravados no MESMO formato da versao
-    de menu (backup-servicos.json + registro), entao o "Restaurar" das duas
-    versoes funciona junto.
+    Servicos e inicializacao sao reversiveis pelo botao "Restaurar" (backup no
+    MESMO formato da versao de menu - backup-servicos.json - entao funciona
+    junto com a opcao 13 de la). Ajustes de REGISTRO (aparencia, telemetria,
+    Windows 11 etc.) ainda NAO tem backup nesta versao GUI - por enquanto,
+    reverta-os manualmente ou use um ponto de restauracao do Windows (botao
+    "Criar ponto de restauracao"). A versao de menu (Otimizador-Total.ps1) ja
+    reverte registro tambem, se precisar dessa garantia.
 
     Execute como ADMINISTRADOR (use o .bat ou clique direito > admin).
     Autor: Alexandre Alan
@@ -60,6 +66,16 @@ if (Test-Path $ArquivoBackupSvc) {
         foreach ($p in $j.PSObject.Properties) { $Global:BackupSvc[$p.Name] = $p.Value }
     } catch { }
 }
+
+# ----------------------------------------------------------------------
+#  Deteccao do sistema (Windows 10 x 11) - mesmo criterio da versao de menu.
+#  Usado pra: (1) titulo/subtitulo da janela mostrarem o SO real, e (2) so
+#  incluir no catalogo os itens de "Ajustes do Windows 11" quando aplicavel
+#  (em vez de listar e depois avisar "nao se aplica" como a versao de menu).
+# ----------------------------------------------------------------------
+$Global:BuildSO = [int]([System.Environment]::OSVersion.Version.Build)
+$Global:Win11   = $Global:BuildSO -ge 22000
+$Global:NomeSO  = if ($Global:Win11) { "Windows 11" } else { "Windows 10" }
 
 function Salvar-BackupSvc {
     try { $Global:BackupSvc | ConvertTo-Json | Set-Content -Path $ArquivoBackupSvc -Encoding UTF8 } catch { }
@@ -320,13 +336,81 @@ foreach ($app in $bloat) {
 "@))
 }
 
+# ---- MAXIMA PERFORMANCE (CPU + Sistema) - mesmos itens da versao de menu ----
+# powercfg/bcdedit nao sao desfeitos pelo Restaurar (nem aqui, nem na versao de
+# menu) - por isso o botao "Criar ponto de restauracao" existe. Ja os itens de
+# registro abaixo usam a mesma Definir-Registro do resto da GUI.
+Add-Tweak "Maxima performance" "Garantir TODOS os nucleos liberados no boot" `
+    "Remove qualquer limite de processadores (msconfig so LIMITA, isto de fato libera)" "Verde" $false {
+    cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
+    "ok (limite de nucleos removido, se houvesse algum)"
+}
+Add-Tweak "Maxima performance" "CPU sempre pronta: core parking OFF + turbo liberado" `
+    "Nada perceptivel; ociosa a CPU ainda baixa o clock (monitoramento continua vendo carga real)" "Verde" $false {
+    powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+    powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+    powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+    powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+    powercfg -setactive SCHEME_CURRENT | Out-Null
+    "ok"
+}
+Add-Tweak "Maxima performance" "Prioridade para o programa em foco" `
+    "Da mais CPU pro app que voce esta usando agora" "Verde" $false {
+    Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 38; "ok"
+}
+Add-Tweak "Maxima performance" "Desativar Game DVR / gravacao em 2o plano" `
+    "Para a captura de tela em 2o plano da Xbox Game Bar (libera CPU/GPU/RAM)" "Verde" $false {
+    Definir-Registro "HKCU:\System\GameConfigStore" "GameDVR_Enabled" 0
+    Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
+    "ok"
+}
+Add-Tweak "Maxima performance" "Ativar HAGS (agendamento de GPU por hardware)" `
+    "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel" "Amarelo" $false {
+    Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2; "ok"
+}
+Add-Tweak "Maxima performance" "Tirar o atraso dos programas de inicializacao" `
+    "Apps de startup abrem sem o atraso artificial que o Windows aplica" "Verde" $false {
+    Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" "StartupDelayInMSec" 0; "ok"
+}
+
+# ---- AJUSTES DO WINDOWS 11 - so entra no catalogo se o sistema for W11 ----
+# (a versao de menu mostra o item e avisa "nao se aplica" no Windows 10; aqui
+# preferimos nem listar, fica mais limpo pra quem esta no W10)
+if ($Global:Win11) {
+    Add-Tweak "Ajustes do Windows 11" "Menu de contexto CLASSICO (igual ao Windows 10)" `
+        "Volta o menu completo do botao direito, sem o 'Mostrar mais opcoes'" "Verde" $false {
+        $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+        reg add $clsid /f /ve | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
+        "ok"
+    }
+    Add-Tweak "Ajustes do Windows 11" "Desativar os WIDGETS da barra de tarefas" `
+        "Tira o painel de noticias/clima (fica em 2o plano consumindo RAM)" "Verde" $false {
+        # So a chave HKCU (usuario) - a de HKLM\...\Policies\Dsh fica de fora aqui
+        # de proposito: e territorio de GPO e a Definir-Registro da GUI ainda nao
+        # tem a checagem de dominio/GPO que a versao de menu tem.
+        Definir-Registro $RegAdvanced "TaskbarDa" 0; "ok"
+    }
+    Add-Tweak "Ajustes do Windows 11" "Desativar o CHAT (Teams) da barra de tarefas" `
+        "Remove o icone do Microsoft Teams (consumidor) da barra" "Verde" $false {
+        Definir-Registro $RegAdvanced "TaskbarMn" 0; "ok"
+    }
+    Add-Tweak "Ajustes do Windows 11" "Reiniciar o Explorer (aplica os ajustes do W11 acima)" `
+        "A barra de tarefas pisca e recarrega por um instante" "Amarelo" $false {
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer }
+        "ok"
+    }
+}
+
 # ======================================================================
 #  XAML - casca da janela (tema escuro)
 # ======================================================================
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Otimizador Total - Windows 10" Height="760" Width="940"
+        Title="Otimizador Total" Height="760" Width="940"
         WindowStartupLocation="CenterScreen" Background="#FF1E1E2E">
   <Grid Margin="0">
     <Grid.RowDefinitions>
@@ -340,7 +424,7 @@ foreach ($app in $bloat) {
     <Border Grid.Row="0" Background="#FF181826" Padding="18,14">
       <StackPanel>
         <TextBlock Text="OTIMIZADOR TOTAL" Foreground="#FFFFFFFF" FontSize="22" FontWeight="Bold"/>
-        <TextBlock Text="Windows 10 - mais leve e rapido. Marque o que quiser e clique em Aplicar." Foreground="#FFAAAAC0" FontSize="12" Margin="0,2,0,8"/>
+        <TextBlock x:Name="TxtSubtitulo" Text="Mais leve e rapido. Marque o que quiser e clique em Aplicar." Foreground="#FFAAAAC0" FontSize="12" Margin="0,2,0,8"/>
         <TextBlock x:Name="TxtPerf" Foreground="#FF7FE0C0" FontSize="13" FontWeight="SemiBold"/>
         <TextBlock x:Name="TxtPerfIni" Foreground="#FF7A7A90" FontSize="11"/>
       </StackPanel>
@@ -383,16 +467,22 @@ foreach ($app in $bloat) {
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $win    = [Windows.Markup.XamlReader]::Load($reader)
 
-$TxtPerf     = $win.FindName("TxtPerf")
-$TxtPerfIni  = $win.FindName("TxtPerfIni")
-$PainelItens = $win.FindName("PainelItens")
-$TxtLog      = $win.FindName("TxtLog")
-$BtnAplicar  = $win.FindName("BtnAplicar")
-$BtnRec      = $win.FindName("BtnRec")
-$BtnLimpar   = $win.FindName("BtnLimpar")
-$BtnPonto    = $win.FindName("BtnPonto")
-$BtnRestaurar= $win.FindName("BtnRestaurar")
-$BtnMedir    = $win.FindName("BtnMedir")
+$TxtPerf      = $win.FindName("TxtPerf")
+$TxtPerfIni   = $win.FindName("TxtPerfIni")
+$TxtSubtitulo = $win.FindName("TxtSubtitulo")
+$PainelItens  = $win.FindName("PainelItens")
+$TxtLog       = $win.FindName("TxtLog")
+$BtnAplicar   = $win.FindName("BtnAplicar")
+$BtnRec       = $win.FindName("BtnRec")
+$BtnLimpar    = $win.FindName("BtnLimpar")
+$BtnPonto     = $win.FindName("BtnPonto")
+$BtnRestaurar = $win.FindName("BtnRestaurar")
+$BtnMedir     = $win.FindName("BtnMedir")
+
+# Titulo/subtitulo com o SO real (detectado no topo do script), em vez do
+# "Windows 10" fixo que a janela tinha antes.
+$win.Title = "Otimizador Total - $Global:NomeSO"
+$TxtSubtitulo.Text = "$Global:NomeSO - mais leve e rapido. Marque o que quiser e clique em Aplicar."
 
 $conv = New-Object Windows.Media.BrushConverter
 function Brush([string]$hex) { return $conv.ConvertFromString($hex) }
