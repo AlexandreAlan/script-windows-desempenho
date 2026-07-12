@@ -215,6 +215,13 @@ Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
 
 ## Histórico de versões
 
+- **v1.2.0** — versão **gráfica** agora detecta **Windows 10/11** automaticamente (título e
+  subtítulo da janela mostram o sistema real, antes ficava fixo em "Windows 10") e ganhou as
+  seções **Máxima Performance** e **Ajustes do Windows 11** (esta última só aparece na lista
+  quando o PC realmente é Windows 11), alcançando paridade com a versão de menu nos itens de
+  otimização. Ajustes de **registro** na GUI ainda não têm backup/restauração própria (diferente
+  da versão de menu) — use o botão "Criar ponto de restauração" antes, ou a versão de menu se
+  precisar de reversão garantida; isso deve ser corrigido numa próxima versão.
 - **v1.1.0** — nova opção **14 (Diagnóstico e saúde do sistema)** nas duas versões:
   espaço em disco, RAM, saúde física do disco (S.M.A.R.T.) e verificação/reparo de
   arquivos de sistema (SFC + DISM). Recomendado rodar antes de otimizar.
