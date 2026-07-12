@@ -1,0 +1,56 @@
+name: Screenshot GUI
+
+# Abre Otimizador-GUI.ps1 de verdade num Windows real (runner windows-latest,
+# tem sessao de desktop de verdade) e tira um print da janela renderizada.
+# Prova visual de que a GUI abre e desenha certo -- o lint (parser +
+# PSScriptAnalyzer) so confirma que o texto do script e sintaticamente valido,
+# nao que a janela realmente aparece do jeito esperado.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Otimizador-GUI.ps1'
+      - '.github/workflows/screenshot.yml'
+  workflow_dispatch:
+
+jobs:
+  screenshot:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Abrir a GUI e tirar print
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+
+          # ShowDialog() bloqueia ate a janela fechar, entao roda em processo
+          # separado. Se o runner ja estiver com token elevado (comum em
+          # windows-latest), o script pula a auto-elevacao (Start-Process
+          # -Verb RunAs) e vai direto pra janela -- e o caminho esperado aqui,
+          # ja que nao ha sessao interativa pra aprovar um UAC.
+          $proc = Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PWD\Otimizador-GUI.ps1`"" -PassThru
+
+          Start-Sleep -Seconds 12
+
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+          $gfx.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bmp.Save("$PWD\screenshot-gui.png")
+          $gfx.Dispose(); $bmp.Dispose()
+
+          # Encerra tudo que sobrou (o processo principal + a instancia
+          # elevada, se o self-elevate tiver rodado) pra nao deixar pwsh preso.
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Get-Process pwsh, powershell -ErrorAction SilentlyContinue |
+            Where-Object { $_.Id -ne $PID } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Publicar o print como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-gui
+          path: screenshot-gui.png
+          if-no-files-found: error
