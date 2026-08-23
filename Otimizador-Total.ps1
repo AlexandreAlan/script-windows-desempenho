@@ -142,6 +142,79 @@ $Global:NomeSO  = if ($Global:Win11) { "Windows 11" } else { "Windows 10" }
 $Global:EmDominio = $false
 try { $Global:EmDominio = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain } catch { }
 
+# ----------------------------------------------------------------------
+#  PERFIL DA MAQUINA (deteccao adaptativa)
+# ----------------------------------------------------------------------
+# Descobre notebook x desktop, GPU dedicada x integrada, impressora e uso de
+# Xbox. Usado pra dar RECOMENDACAO REAL (com motivo) em vez da mesma sugestao
+# fixa pra qualquer PC - a decisao de aplicar continua sendo sempre do usuario
+# (Y/N em cada item), isto so melhora o texto mostrado antes da pergunta.
+function Obter-TipoDisco {
+    param([string]$Letra)
+    $tipo = "Desconhecido"
+    try {
+        $disco = Get-Partition -DriveLetter $Letra -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue
+        if ($disco) {
+            $fis = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.DeviceId -eq $disco.Number }
+            if ($fis) { $tipo = $fis.MediaType }
+        }
+    } catch { }
+    return $tipo
+}
+
+function Detectar-Perfil {
+    $perfil = [PSCustomObject]@{
+        RamTotalGB     = 0
+        EhNotebook     = $false
+        GPUs           = @()
+        TemGpuDedicada = $false
+        TemImpressora  = $false
+        NomeImpressora = ""
+        TemXbox        = $false
+    }
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $perfil.RamTotalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+    } catch { }
+    try {
+        if ((Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0) {
+            $perfil.EhNotebook = $true
+        } else {
+            $tiposPortateis = 8,9,10,11,12,14,18,21
+            $chassi = Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue
+            foreach ($c in $chassi) {
+                foreach ($t in $c.ChassisTypes) { if ($t -in $tiposPortateis) { $perfil.EhNotebook = $true } }
+            }
+        }
+    } catch { }
+    try {
+        $perfil.GPUs = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name)
+        foreach ($g in $perfil.GPUs) {
+            if ($g -notmatch "Intel|Microsoft Basic|Microsoft Remote") { $perfil.TemGpuDedicada = $true }
+        }
+    } catch { }
+    try {
+        # Impressoras VIRTUAIS (PDF, XPS, Fax, OneNote) vem em praticamente todo Windows
+        # e nao usam o Spooler pra imprimir de verdade - excluir pelo driver, senao
+        # "TemImpressora" da true em qualquer maquina e a deteccao vira inutil.
+        $driversVirtuais = "Microsoft XPS Document Writer*","Microsoft Print To PDF*","Microsoft Shared Fax Driver*","Microsoft Software Printer Driver*"
+        $imp = Get-Printer -ErrorAction Stop | Where-Object {
+            $d = $_.DriverName
+            -not ($driversVirtuais | Where-Object { $d -like $_ })
+        } | Select-Object -First 1
+        if ($imp) { $perfil.TemImpressora = $true; $perfil.NomeImpressora = $imp.Name }
+    } catch { }
+    try {
+        # Apps "Xbox"/"GamingApp" vem PRE-INSTALADOS por padrao em quase todo Windows
+        # 10/11 mesmo sem uso real - nao servem de sinal. O controle Xbox de verdade
+        # plugado/pareado e o sinal confiavel de uso real.
+        $ctrlXbox = Get-PnpDevice -Class HIDClass -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -match "Xbox" }
+        if (($ctrlXbox | Measure-Object).Count -gt 0) { $perfil.TemXbox = $true }
+    } catch { }
+    return $perfil
+}
+$Global:Perfil = Detectar-Perfil
+
 # Log de auditoria: cada acao registra OK/ERRO/PULADO; ao sair, gera um
 # relatorio otimizador-log_<data>.txt na Area de Trabalho (comprovante de servico).
 $Global:Log = New-Object System.Collections.Generic.List[string]
@@ -261,13 +334,20 @@ function Salvar-BackupSvc {
 }
 
 function Desativar-Servico {
-    param([string]$Nome,[string]$Amigavel,[string]$Perde)
+    param([string]$Nome,[string]$Amigavel,[string]$Perde,[Nullable[bool]]$Recomendado=$null,[string]$Motivo="")
     $svc = Get-Service -Name $Nome -ErrorAction SilentlyContinue
     if (-not $svc) { return }
     Write-Host ""
     Write-Host ("-" * 64) -ForegroundColor DarkCyan
     Write-Host "  $Amigavel  ($Nome)" -ForegroundColor Cyan
     Write-Host "  Voce PERDE: $Perde" -ForegroundColor Yellow
+    if ($null -ne $Recomendado) {
+        if ($Recomendado) {
+            Write-Host "  [RECOMENDADO PRA ESTE PC] $Motivo" -ForegroundColor Green
+        } else {
+            Write-Host "  [NAO RECOMENDADO NESTE PC] $Motivo" -ForegroundColor Red
+        }
+    }
     Write-Host "  Estado atual: $($svc.Status) / inicio: $((Get-Service $Nome).StartType)" -ForegroundColor DarkGray
     if (Perguntar "Desativar?") {
         try {
@@ -332,7 +412,13 @@ function Secao-Aparencia {
         Definir-Registro $cdm "SubscribedContent-310093Enabled" 0
         Definir-Registro $cdm "SystemPaneSuggestionsEnabled" 0
     }
-    Item "Plano de energia: ALTO DESEMPENHO" "Deixa a maquina mais responsiva." {
+    $descAltoDesempenho = "Deixa a maquina mais responsiva."
+    if ($Global:Perfil.EhNotebook) {
+        $descAltoDesempenho += " [NAO RECOMENDADO NESTE PC: notebook detectado - reduz bastante a autonomia da bateria; so vale se ficar sempre na tomada.]"
+    } else {
+        $descAltoDesempenho += " [RECOMENDADO NESTE PC: desktop detectado.]"
+    }
+    Item "Plano de energia: ALTO DESEMPENHO" $descAltoDesempenho {
         powercfg -setactive SCHEME_MIN | Out-Null
     }
 }
@@ -420,13 +506,15 @@ function Secao-Servicos {
     Desativar-Servico "WMPNetworkSvc"    "Compartilhamento do Windows Media"      "Compartilhar biblioteca na rede"
 
     Write-Host ""; Write-Host "  >>> GRUPO 2: XBOX / GAME BAR (se nao usa) <<<" -ForegroundColor Green
-    Desativar-Servico "XblAuthManager"   "Xbox Live - Autenticacao"  "Login em servicos Xbox"
-    Desativar-Servico "XblGameSave"      "Xbox Live - Salvar Jogo"   "Saves na nuvem do Xbox"
-    Desativar-Servico "XboxNetApiSvc"    "Xbox Live - Rede"          "Recursos online Xbox"
-    Desativar-Servico "XboxGipSvc"       "Xbox - Entrada"            "Controle de Xbox no PC"
+    $motivoXbox = if ($Global:Perfil.TemXbox) { "detectei app/controle Xbox neste PC" } else { "nenhum uso de Xbox detectado neste PC" }
+    Desativar-Servico "XblAuthManager"   "Xbox Live - Autenticacao"  "Login em servicos Xbox"  (-not $Global:Perfil.TemXbox) $motivoXbox
+    Desativar-Servico "XblGameSave"      "Xbox Live - Salvar Jogo"   "Saves na nuvem do Xbox"  (-not $Global:Perfil.TemXbox) $motivoXbox
+    Desativar-Servico "XboxNetApiSvc"    "Xbox Live - Rede"          "Recursos online Xbox"    (-not $Global:Perfil.TemXbox) $motivoXbox
+    Desativar-Servico "XboxGipSvc"       "Xbox - Entrada"            "Controle de Xbox no PC"  (-not $Global:Perfil.TemXbox) $motivoXbox
 
     Write-Host ""; Write-Host "  >>> GRUPO 3: CUIDADO - leia antes <<<" -ForegroundColor Yellow
-    Desativar-Servico "Spooler"            "Spooler de Impressao"       "IMPRIMIR (so se NAO tem impressora)"
+    $motivoImpressora = if ($Global:Perfil.TemImpressora) { "impressora detectada: $($Global:Perfil.NomeImpressora)" } else { "nenhuma impressora instalada neste PC" }
+    Desativar-Servico "Spooler"            "Spooler de Impressao"       "IMPRIMIR (so se NAO tem impressora)" (-not $Global:Perfil.TemImpressora) $motivoImpressora
     Desativar-Servico "WSearch"            "Windows Search (indexacao)" "Busca rapida de arquivos fica lenta"
     Desativar-Servico "TabletInputService" "Teclado de Toque"          "Teclado virtual / emoji (Win+.)"
     Desativar-Servico "PrintNotify"        "Notificacoes de Impressao"  "Avisos da impressora"
@@ -533,19 +621,7 @@ function Secao-Disco {
 
     foreach ($v in $volumes) {
         $letra = $v.DriveLetter
-        # descobre o tipo de midia (SSD x HDD)
-        $tipo = "Desconhecido"
-        try {
-            $pd = Get-PhysicalDisk -ErrorAction SilentlyContinue |
-                  Where-Object { $_.DeviceId -ne $null } | Select-Object -First 1
-            $disco = Get-Partition -DriveLetter $letra -ErrorAction SilentlyContinue |
-                     Get-Disk -ErrorAction SilentlyContinue
-            if ($disco) {
-                $fis = Get-PhysicalDisk -ErrorAction SilentlyContinue |
-                       Where-Object { $_.DeviceId -eq $disco.Number }
-                if ($fis) { $tipo = $fis.MediaType }
-            }
-        } catch { }
+        $tipo = Obter-TipoDisco $letra
 
         Write-Host ""
         Write-Host ("-" * 64) -ForegroundColor DarkCyan
@@ -633,6 +709,15 @@ function Secao-Diagnostico {
     Write-Host "  So verifica (nao altera nada, exceto se voce pedir reparo). Pode demorar alguns minutos." -ForegroundColor Gray
     # SFC/DISM reparam arquivos de sistema, nao registro - a opcao 13 nao desfaz isso.
     Ponto-Restauracao
+
+    Write-Host ""; Write-Host "  >>> PERFIL DETECTADO DA MAQUINA <<<" -ForegroundColor Green
+    Write-Host ("   Tipo: {0}" -f $(if ($Global:Perfil.EhNotebook) { "Notebook (tem bateria/chassi portatil)" } else { "Desktop" })) -ForegroundColor Gray
+    Write-Host ("   RAM total: {0} GB" -f $Global:Perfil.RamTotalGB) -ForegroundColor Gray
+    Write-Host ("   GPU(s): {0}" -f $(if ($Global:Perfil.GPUs.Count -gt 0) { $Global:Perfil.GPUs -join ", " } else { "nao detectada" })) -ForegroundColor Gray
+    Write-Host ("   GPU dedicada: {0}" -f $(if ($Global:Perfil.TemGpuDedicada) { "sim" } else { "nao (so integrada)" })) -ForegroundColor Gray
+    Write-Host ("   Impressora: {0}" -f $(if ($Global:Perfil.TemImpressora) { "sim ($($Global:Perfil.NomeImpressora))" } else { "nao detectada" })) -ForegroundColor Gray
+    Write-Host ("   Uso de Xbox (app/controle): {0}" -f $(if ($Global:Perfil.TemXbox) { "sim" } else { "nao detectado" })) -ForegroundColor Gray
+    Write-Host "   Esse perfil e usado pra recomendar (ou nao) itens nas secoes 4 e 9." -ForegroundColor DarkGray
 
     Write-Host ""; Write-Host "  >>> ESPACO EM DISCO E MEMORIA <<<" -ForegroundColor Green
     $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
@@ -878,8 +963,13 @@ function Secao-Performance {
         cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
         Write-Host "   Qualquer limite de nucleos foi removido (Windows usa todos)." -ForegroundColor DarkGray
     }
-    Item "CPU sempre pronta: core parking OFF + turbo liberado (max 100%)" `
-        "Mantem os nucleos ativos e libera a frequencia maxima SOB CARGA. NAO fixa o minimo: ociosa, a CPU baixa o clock (o monitoramento ve a carga real)." {
+    $descCpuMax = "Mantem os nucleos ativos e libera a frequencia maxima SOB CARGA. NAO fixa o minimo: ociosa, a CPU baixa o clock (o monitoramento ve a carga real)."
+    if ($Global:Perfil.EhNotebook) {
+        $descCpuMax += " [NAO RECOMENDADO NESTE PC: notebook detectado - reduz a autonomia da bateria.]"
+    } else {
+        $descCpuMax += " [RECOMENDADO NESTE PC: desktop detectado.]"
+    }
+    Item "CPU sempre pronta: core parking OFF + turbo liberado (max 100%)" $descCpuMax {
         powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
         powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
         powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
@@ -898,8 +988,13 @@ function Secao-Performance {
         Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" 0
         Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
     }
-    Item "Ativar HAGS (agendamento de GPU por hardware)" `
-        "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel." {
+    $descHags = "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel."
+    if ($Global:Perfil.TemGpuDedicada) {
+        $descHags += " [RECOMENDADO EXPERIMENTAR: GPU dedicada detectada ($($Global:Perfil.GPUs -join ', ')).]"
+    } else {
+        $descHags += " [GANHO PROVAVELMENTE PEQUENO: so GPU integrada detectada neste PC.]"
+    }
+    Item "Ativar HAGS (agendamento de GPU por hardware)" $descHags {
         Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2
     }
     Item "Tirar o atraso dos programas de inicializacao" `
@@ -929,6 +1024,10 @@ function Mostrar-Menu {
     if ($Global:EmDominio) {
         Write-Host "   Maquina em DOMINIO (AD): respeitando a Politica de Grupo (GPO)." -ForegroundColor DarkCyan
     }
+    $tipoChassi = if ($Global:Perfil.EhNotebook) { "Notebook" } else { "Desktop" }
+    $gpuResumo  = if ($Global:Perfil.GPUs.Count -gt 0) { $Global:Perfil.GPUs -join ", " } else { "nao detectada" }
+    Write-Host ("   PERFIL: {0} | GPU: {1} | RAM total: {2} GB | Impressora: {3} | Xbox: {4}" -f `
+        $tipoChassi, $gpuResumo, $Global:Perfil.RamTotalGB, $(if ($Global:Perfil.TemImpressora) {"sim"} else {"nao"}), $(if ($Global:Perfil.TemXbox) {"sim"} else {"nao"})) -ForegroundColor DarkCyan
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   1 - Aparencia / efeitos visuais" -ForegroundColor Gray
     Write-Host "   2 - Limpeza (temporarios + lixeira)" -ForegroundColor Gray

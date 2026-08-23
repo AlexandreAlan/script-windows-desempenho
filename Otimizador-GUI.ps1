@@ -77,6 +77,75 @@ $Global:BuildSO = [int]([System.Environment]::OSVersion.Version.Build)
 $Global:Win11   = $Global:BuildSO -ge 22000
 $Global:NomeSO  = if ($Global:Win11) { "Windows 11" } else { "Windows 10" }
 
+# ----------------------------------------------------------------------
+#  PERFIL DA MAQUINA (deteccao adaptativa) - mesma logica da versao de menu
+# ----------------------------------------------------------------------
+function Obter-TipoDisco {
+    param([string]$Letra)
+    $tipo = "Desconhecido"
+    try {
+        $disco = Get-Partition -DriveLetter $Letra -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue
+        if ($disco) {
+            $fis = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.DeviceId -eq $disco.Number }
+            if ($fis) { $tipo = $fis.MediaType }
+        }
+    } catch { }
+    return $tipo
+}
+
+function Detectar-Perfil {
+    $perfil = [PSCustomObject]@{
+        RamTotalGB     = 0
+        EhNotebook     = $false
+        GPUs           = @()
+        TemGpuDedicada = $false
+        TemImpressora  = $false
+        NomeImpressora = ""
+        TemXbox        = $false
+    }
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $perfil.RamTotalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+    } catch { }
+    try {
+        if ((Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0) {
+            $perfil.EhNotebook = $true
+        } else {
+            $tiposPortateis = 8,9,10,11,12,14,18,21
+            $chassi = Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue
+            foreach ($c in $chassi) {
+                foreach ($t in $c.ChassisTypes) { if ($t -in $tiposPortateis) { $perfil.EhNotebook = $true } }
+            }
+        }
+    } catch { }
+    try {
+        $perfil.GPUs = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name)
+        foreach ($g in $perfil.GPUs) {
+            if ($g -notmatch "Intel|Microsoft Basic|Microsoft Remote") { $perfil.TemGpuDedicada = $true }
+        }
+    } catch { }
+    try {
+        # Impressoras VIRTUAIS (PDF, XPS, Fax, OneNote) vem em praticamente todo Windows
+        # e nao usam o Spooler pra imprimir de verdade - excluir pelo driver, senao
+        # "TemImpressora" da true em qualquer maquina e a deteccao vira inutil.
+        $driversVirtuais = "Microsoft XPS Document Writer*","Microsoft Print To PDF*","Microsoft Shared Fax Driver*","Microsoft Software Printer Driver*"
+        $imp = Get-Printer -ErrorAction Stop | Where-Object {
+            $d = $_.DriverName
+            -not ($driversVirtuais | Where-Object { $d -like $_ })
+        } | Select-Object -First 1
+        if ($imp) { $perfil.TemImpressora = $true; $perfil.NomeImpressora = $imp.Name }
+    } catch { }
+    try {
+        # Apps "Xbox"/"GamingApp" vem PRE-INSTALADOS por padrao em quase todo Windows
+        # 10/11 mesmo sem uso real - nao servem de sinal. O controle Xbox de verdade
+        # plugado/pareado e o sinal confiavel de uso real.
+        $ctrlXbox = Get-PnpDevice -Class HIDClass -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -match "Xbox" }
+        if (($ctrlXbox | Measure-Object).Count -gt 0) { $perfil.TemXbox = $true }
+    } catch { }
+    return $perfil
+}
+$Global:Perfil = Detectar-Perfil
+
 function Salvar-BackupSvc {
     try { $Global:BackupSvc | ConvertTo-Json | Set-Content -Path $ArquivoBackupSvc -Encoding UTF8 } catch { }
 }
@@ -189,7 +258,8 @@ Add-Tweak "Aparencia / efeitos visuais" "Desativar dicas, sugestoes e propaganda
     Definir-Registro $cdm "SubscribedContent-310093Enabled" 0
     Definir-Registro $cdm "SystemPaneSuggestionsEnabled" 0; "ok"
 }
-Add-Tweak "Aparencia / efeitos visuais" "Plano de energia: ALTO DESEMPENHO" "Gasta um pouco mais de energia (ideal desktop)" "Verde" $true {
+$percaAltoDesempenho = if ($Global:Perfil.EhNotebook) { "Gasta mais energia - NAO recomendado em notebook (reduz bateria)" } else { "Gasta um pouco mais de energia (ideal desktop, detectado aqui)" }
+Add-Tweak "Aparencia / efeitos visuais" "Plano de energia: ALTO DESEMPENHO" $percaAltoDesempenho "Verde" (-not $Global:Perfil.EhNotebook) {
     powercfg -setactive SCHEME_MIN | Out-Null; "ok"
 }
 
@@ -224,16 +294,18 @@ Add-Tweak "Servicos - seguros" "Gerenciador de Mapas Baixados (MapsBroker)" "Map
 Add-Tweak "Servicos - seguros" "Compartilhamento do Windows Media (WMPNetworkSvc)" "Compartilhar biblioteca na rede" "Verde" $true { Apl-Servico "WMPNetworkSvc" }
 
 # ---- SERVICOS XBOX (amarelo) ----
-Add-Tweak "Servicos - Xbox" "Xbox Live - Autenticacao (XblAuthManager)" "Login em servicos Xbox" "Amarelo" $false { Apl-Servico "XblAuthManager" }
-Add-Tweak "Servicos - Xbox" "Xbox Live - Salvar Jogo (XblGameSave)" "Saves na nuvem do Xbox" "Amarelo" $false { Apl-Servico "XblGameSave" }
-Add-Tweak "Servicos - Xbox" "Xbox Live - Rede (XboxNetApiSvc)" "Recursos online Xbox" "Amarelo" $false { Apl-Servico "XboxNetApiSvc" }
-Add-Tweak "Servicos - Xbox" "Xbox - Entrada (XboxGipSvc)" "Controle de Xbox no PC" "Amarelo" $false { Apl-Servico "XboxGipSvc" }
+$percaXbox = if ($Global:Perfil.TemXbox) { "detectei app/controle Xbox neste PC - login em servicos Xbox" } else { "nenhum uso de Xbox detectado neste PC - login em servicos Xbox" }
+Add-Tweak "Servicos - Xbox" "Xbox Live - Autenticacao (XblAuthManager)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblAuthManager" }
+Add-Tweak "Servicos - Xbox" "Xbox Live - Salvar Jogo (XblGameSave)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblGameSave" }
+Add-Tweak "Servicos - Xbox" "Xbox Live - Rede (XboxNetApiSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxNetApiSvc" }
+Add-Tweak "Servicos - Xbox" "Xbox - Entrada (XboxGipSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxGipSvc" }
 
 # ---- SERVICOS CUIDADO (amarelo/vermelho) ----
 Add-Tweak "Servicos - cuidado" "Teclado de Toque (TabletInputService)" "Teclado virtual / emoji (Win+.)" "Amarelo" $false { Apl-Servico "TabletInputService" }
 Add-Tweak "Servicos - cuidado" "Servico de Telefone (PhoneSvc)" "Integracao com telefone" "Amarelo" $false { Apl-Servico "PhoneSvc" }
 Add-Tweak "Servicos - cuidado" "Geolocalizacao (lfsvc)" "Apps saberem sua localizacao" "Amarelo" $false { Apl-Servico "lfsvc" }
-Add-Tweak "Servicos - cuidado" "Spooler de Impressao (Spooler)" "VOCE NAO IMPRIME MAIS - so se nao tem impressora" "Vermelho" $false { Apl-Servico "Spooler" }
+$percaSpooler = if ($Global:Perfil.TemImpressora) { "VOCE NAO IMPRIME MAIS - impressora detectada: $($Global:Perfil.NomeImpressora)" } else { "VOCE NAO IMPRIME MAIS - nenhuma impressora detectada neste PC" }
+Add-Tweak "Servicos - cuidado" "Spooler de Impressao (Spooler)" $percaSpooler "Vermelho" (-not $Global:Perfil.TemImpressora) { Apl-Servico "Spooler" }
 Add-Tweak "Servicos - cuidado" "Windows Search / indexacao (WSearch)" "Busca de arquivos fica lenta" "Vermelho" $false { Apl-Servico "WSearch" }
 Add-Tweak "Servicos - cuidado" "Notificacoes de Impressao (PrintNotify)" "Avisos da impressora" "Vermelho" $false { Apl-Servico "PrintNotify" }
 
@@ -290,14 +362,7 @@ Add-Tweak "Rede" "Limpar cache de DNS agora" "Nada - so limpa enderecos antigos"
 $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
 foreach ($v in $volumes) {
     $letra = $v.DriveLetter
-    $tipo = "Desconhecido"
-    try {
-        $disco = Get-Partition -DriveLetter $letra -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue
-        if ($disco) {
-            $fis = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.DeviceId -eq $disco.Number }
-            if ($fis) { $tipo = $fis.MediaType }
-        }
-    } catch { }
+    $tipo = Obter-TipoDisco $letra
     $acaoTxt = if ($tipo -eq "SSD") { "TRIM (correto p/ SSD)" } elseif ($tipo -eq "HDD") { "Desfragmentar (HD comum)" } else { "Otimizacao padrao" }
     $L = "$letra"
     Add-Tweak "Disco" "Otimizar disco $($L): (tipo: $tipo) - $acaoTxt" "Pode demorar; nao apaga nada" "Verde" $false ([scriptblock]::Create(@"
@@ -345,8 +410,9 @@ Add-Tweak "Maxima performance" "Garantir TODOS os nucleos liberados no boot" `
     cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
     "ok (limite de nucleos removido, se houvesse algum)"
 }
-Add-Tweak "Maxima performance" "CPU sempre pronta: core parking OFF + turbo liberado" `
-    "Nada perceptivel; ociosa a CPU ainda baixa o clock (monitoramento continua vendo carga real)" "Verde" $false {
+$percaCpuMax = "Nada perceptivel; ociosa a CPU ainda baixa o clock (monitoramento continua vendo carga real)"
+$percaCpuMax += if ($Global:Perfil.EhNotebook) { " - NAO recomendado em notebook (reduz bateria)" } else { " - recomendado (desktop detectado)" }
+Add-Tweak "Maxima performance" "CPU sempre pronta: core parking OFF + turbo liberado" $percaCpuMax "Verde" (-not $Global:Perfil.EhNotebook) {
     powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
     powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
     powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
@@ -364,8 +430,9 @@ Add-Tweak "Maxima performance" "Desativar Game DVR / gravacao em 2o plano" `
     Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
     "ok"
 }
-Add-Tweak "Maxima performance" "Ativar HAGS (agendamento de GPU por hardware)" `
-    "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel" "Amarelo" $false {
+$percaHags = "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel"
+$percaHags += if ($Global:Perfil.TemGpuDedicada) { " - GPU dedicada detectada, vale experimentar" } else { " - so GPU integrada detectada, ganho provavelmente pequeno" }
+Add-Tweak "Maxima performance" "Ativar HAGS (agendamento de GPU por hardware)" $percaHags "Amarelo" $Global:Perfil.TemGpuDedicada {
     Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2; "ok"
 }
 Add-Tweak "Maxima performance" "Tirar o atraso dos programas de inicializacao" `
@@ -482,7 +549,8 @@ $BtnMedir     = $win.FindName("BtnMedir")
 # Titulo/subtitulo com o SO real (detectado no topo do script), em vez do
 # "Windows 10" fixo que a janela tinha antes.
 $win.Title = "Otimizador Total - $Global:NomeSO"
-$TxtSubtitulo.Text = "$Global:NomeSO - mais leve e rapido. Marque o que quiser e clique em Aplicar."
+$tipoChassiGui = if ($Global:Perfil.EhNotebook) { "Notebook" } else { "Desktop" }
+$TxtSubtitulo.Text = "$Global:NomeSO ($tipoChassiGui, $($Global:Perfil.RamTotalGB) GB RAM) - mais leve e rapido. Itens marcados/desmarcados de acordo com este PC."
 
 $conv = New-Object Windows.Media.BrushConverter
 function Brush([string]$hex) { return $conv.ConvertFromString($hex) }
