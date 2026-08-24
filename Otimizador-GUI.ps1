@@ -99,8 +99,6 @@ function Detectar-Perfil {
         EhNotebook     = $false
         GPUs           = @()
         TemGpuDedicada = $false
-        TemImpressora  = $false
-        NomeImpressora = ""
         TemXbox        = $false
     }
     try {
@@ -123,17 +121,6 @@ function Detectar-Perfil {
         foreach ($g in $perfil.GPUs) {
             if ($g -notmatch "Intel|Microsoft Basic|Microsoft Remote") { $perfil.TemGpuDedicada = $true }
         }
-    } catch { }
-    try {
-        # Impressoras VIRTUAIS (PDF, XPS, Fax, OneNote) vem em praticamente todo Windows
-        # e nao usam o Spooler pra imprimir de verdade - excluir pelo driver, senao
-        # "TemImpressora" da true em qualquer maquina e a deteccao vira inutil.
-        $driversVirtuais = "Microsoft XPS Document Writer*","Microsoft Print To PDF*","Microsoft Shared Fax Driver*","Microsoft Software Printer Driver*"
-        $imp = Get-Printer -ErrorAction Stop | Where-Object {
-            $d = $_.DriverName
-            -not ($driversVirtuais | Where-Object { $d -like $_ })
-        } | Select-Object -First 1
-        if ($imp) { $perfil.TemImpressora = $true; $perfil.NomeImpressora = $imp.Name }
     } catch { }
     try {
         # Apps "Xbox"/"GamingApp" vem PRE-INSTALADOS por padrao em quase todo Windows
@@ -304,8 +291,7 @@ Add-Tweak "Servicos - Xbox" "Xbox - Entrada (XboxGipSvc)" $percaXbox "Amarelo" (
 Add-Tweak "Servicos - cuidado" "Teclado de Toque (TabletInputService)" "Teclado virtual / emoji (Win+.)" "Amarelo" $false { Apl-Servico "TabletInputService" }
 Add-Tweak "Servicos - cuidado" "Servico de Telefone (PhoneSvc)" "Integracao com telefone" "Amarelo" $false { Apl-Servico "PhoneSvc" }
 Add-Tweak "Servicos - cuidado" "Geolocalizacao (lfsvc)" "Apps saberem sua localizacao" "Amarelo" $false { Apl-Servico "lfsvc" }
-$percaSpooler = if ($Global:Perfil.TemImpressora) { "VOCE NAO IMPRIME MAIS - impressora detectada: $($Global:Perfil.NomeImpressora)" } else { "VOCE NAO IMPRIME MAIS - nenhuma impressora detectada neste PC" }
-Add-Tweak "Servicos - cuidado" "Spooler de Impressao (Spooler)" $percaSpooler "Vermelho" (-not $Global:Perfil.TemImpressora) { Apl-Servico "Spooler" }
+Add-Tweak "Servicos - cuidado" "Spooler de Impressao (Spooler)" "VOCE NAO IMPRIME MAIS - so se nao tem impressora" "Vermelho" $false { Apl-Servico "Spooler" }
 Add-Tweak "Servicos - cuidado" "Windows Search / indexacao (WSearch)" "Busca de arquivos fica lenta" "Vermelho" $false { Apl-Servico "WSearch" }
 Add-Tweak "Servicos - cuidado" "Notificacoes de Impressao (PrintNotify)" "Avisos da impressora" "Vermelho" $false { Apl-Servico "PrintNotify" }
 

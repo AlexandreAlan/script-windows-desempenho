@@ -168,8 +168,6 @@ function Detectar-Perfil {
         EhNotebook     = $false
         GPUs           = @()
         TemGpuDedicada = $false
-        TemImpressora  = $false
-        NomeImpressora = ""
         TemXbox        = $false
     }
     try {
@@ -192,17 +190,6 @@ function Detectar-Perfil {
         foreach ($g in $perfil.GPUs) {
             if ($g -notmatch "Intel|Microsoft Basic|Microsoft Remote") { $perfil.TemGpuDedicada = $true }
         }
-    } catch { }
-    try {
-        # Impressoras VIRTUAIS (PDF, XPS, Fax, OneNote) vem em praticamente todo Windows
-        # e nao usam o Spooler pra imprimir de verdade - excluir pelo driver, senao
-        # "TemImpressora" da true em qualquer maquina e a deteccao vira inutil.
-        $driversVirtuais = "Microsoft XPS Document Writer*","Microsoft Print To PDF*","Microsoft Shared Fax Driver*","Microsoft Software Printer Driver*"
-        $imp = Get-Printer -ErrorAction Stop | Where-Object {
-            $d = $_.DriverName
-            -not ($driversVirtuais | Where-Object { $d -like $_ })
-        } | Select-Object -First 1
-        if ($imp) { $perfil.TemImpressora = $true; $perfil.NomeImpressora = $imp.Name }
     } catch { }
     try {
         # Apps "Xbox"/"GamingApp" vem PRE-INSTALADOS por padrao em quase todo Windows
@@ -513,8 +500,7 @@ function Secao-Servicos {
     Desativar-Servico "XboxGipSvc"       "Xbox - Entrada"            "Controle de Xbox no PC"  (-not $Global:Perfil.TemXbox) $motivoXbox
 
     Write-Host ""; Write-Host "  >>> GRUPO 3: CUIDADO - leia antes <<<" -ForegroundColor Yellow
-    $motivoImpressora = if ($Global:Perfil.TemImpressora) { "impressora detectada: $($Global:Perfil.NomeImpressora)" } else { "nenhuma impressora instalada neste PC" }
-    Desativar-Servico "Spooler"            "Spooler de Impressao"       "IMPRIMIR (so se NAO tem impressora)" (-not $Global:Perfil.TemImpressora) $motivoImpressora
+    Desativar-Servico "Spooler"            "Spooler de Impressao"       "IMPRIMIR (so se NAO tem impressora)"
     Desativar-Servico "WSearch"            "Windows Search (indexacao)" "Busca rapida de arquivos fica lenta"
     Desativar-Servico "TabletInputService" "Teclado de Toque"          "Teclado virtual / emoji (Win+.)"
     Desativar-Servico "PrintNotify"        "Notificacoes de Impressao"  "Avisos da impressora"
@@ -715,7 +701,6 @@ function Secao-Diagnostico {
     Write-Host ("   RAM total: {0} GB" -f $Global:Perfil.RamTotalGB) -ForegroundColor Gray
     Write-Host ("   GPU(s): {0}" -f $(if ($Global:Perfil.GPUs.Count -gt 0) { $Global:Perfil.GPUs -join ", " } else { "nao detectada" })) -ForegroundColor Gray
     Write-Host ("   GPU dedicada: {0}" -f $(if ($Global:Perfil.TemGpuDedicada) { "sim" } else { "nao (so integrada)" })) -ForegroundColor Gray
-    Write-Host ("   Impressora: {0}" -f $(if ($Global:Perfil.TemImpressora) { "sim ($($Global:Perfil.NomeImpressora))" } else { "nao detectada" })) -ForegroundColor Gray
     Write-Host ("   Uso de Xbox (app/controle): {0}" -f $(if ($Global:Perfil.TemXbox) { "sim" } else { "nao detectado" })) -ForegroundColor Gray
     Write-Host "   Esse perfil e usado pra recomendar (ou nao) itens nas secoes 4 e 9." -ForegroundColor DarkGray
 
@@ -1026,8 +1011,8 @@ function Mostrar-Menu {
     }
     $tipoChassi = if ($Global:Perfil.EhNotebook) { "Notebook" } else { "Desktop" }
     $gpuResumo  = if ($Global:Perfil.GPUs.Count -gt 0) { $Global:Perfil.GPUs -join ", " } else { "nao detectada" }
-    Write-Host ("   PERFIL: {0} | GPU: {1} | RAM total: {2} GB | Impressora: {3} | Xbox: {4}" -f `
-        $tipoChassi, $gpuResumo, $Global:Perfil.RamTotalGB, $(if ($Global:Perfil.TemImpressora) {"sim"} else {"nao"}), $(if ($Global:Perfil.TemXbox) {"sim"} else {"nao"})) -ForegroundColor DarkCyan
+    Write-Host ("   PERFIL: {0} | GPU: {1} | RAM total: {2} GB | Xbox: {3}" -f `
+        $tipoChassi, $gpuResumo, $Global:Perfil.RamTotalGB, $(if ($Global:Perfil.TemXbox) {"sim"} else {"nao"})) -ForegroundColor DarkCyan
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   1 - Aparencia / efeitos visuais" -ForegroundColor Gray
     Write-Host "   2 - Limpeza (temporarios + lixeira)" -ForegroundColor Gray

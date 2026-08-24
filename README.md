@@ -115,7 +115,7 @@ quer desativar. Salva backup para reverter.
 **4) Serviços** — reduz processos em segundo plano, organizados por risco:
 - **Seguros:** telemetria, SysMain, Fax, modo demo, registro remoto, etc.
 - **Xbox:** desative se não joga via Xbox. **Detecção adaptativa:** o script verifica se há app/controle Xbox instalado nesta máquina e marca "recomendado" ou "não recomendado" com o motivo, em vez de sugerir sempre a mesma coisa.
-- **Cuidado:** Spooler (impressão) — também adaptativo: só recomenda desativar se **nenhuma impressora** estiver instalada; se houver, mostra o nome dela e recomenda manter. Windows Search, geolocalização.
+- **Cuidado:** Spooler (impressão), Windows Search, geolocalização.
 - **Apps em 2º plano + telemetria** (registro).
 Cada serviço mostra **o que você perde** e salva backup.
 
@@ -230,12 +230,14 @@ Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
 
 - **v1.3.0** — **detecção adaptativa de perfil da máquina** nas duas versões: o script
   agora identifica notebook x desktop (bateria/tipo de chassi), GPU dedicada x
-  integrada, impressora instalada e uso de Xbox (app/controle), e usa isso pra
-  **recomendar (com motivo) só o que faz sentido pra aquele PC** — em vez da mesma
-  sugestão fixa pra qualquer máquina. Afeta o grupo Xbox e o Spooler (seção 4) e os
-  itens de CPU máximo/Alto Desempenho/HAGS (seção 9). O perfil detectado aparece no
-  topo do menu e em detalhe na opção 14 (Diagnóstico); nada muda no fluxo de
-  perguntas Y/N nem nos backups/restauração existentes.
+  integrada e uso de Xbox (controle detectado), e usa isso pra **recomendar (com
+  motivo) só o que faz sentido pra aquele PC** — em vez da mesma sugestão fixa pra
+  qualquer máquina. Afeta o grupo Xbox (seção 4) e os itens de CPU máximo/Alto
+  Desempenho/HAGS (seção 9). O **Spooler de impressão continua sempre como "não
+  recomendado"** independente de detecção — impressora é recurso essencial demais
+  pra sugerir desativar automaticamente. O perfil detectado aparece no topo do menu
+  e em detalhe na opção 14 (Diagnóstico); nada muda no fluxo de perguntas Y/N nem
+  nos backups/restauração existentes.
 - **v1.2.0** — versão **gráfica** agora detecta **Windows 10/11** automaticamente (título e
   subtítulo da janela mostram o sistema real, antes ficava fixo em "Windows 10") e ganhou as
   seções **Máxima Performance** e **Ajustes do Windows 11** (esta última só aparece na lista
