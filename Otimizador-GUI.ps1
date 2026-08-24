@@ -175,11 +175,15 @@ function Apl-Servico {
 $Catalogo = New-Object System.Collections.ArrayList
 
 function Add-Tweak {
-    param([string]$Cat,[string]$Titulo,[string]$Perde,[string]$Risco,[bool]$Rec,[scriptblock]$Run)
+    param([string]$Cat,[string]$Titulo,[string]$Perde,[string]$Risco,[bool]$Rec,[scriptblock]$Run,[string[]]$Perfis=@())
     [void]$Catalogo.Add([PSCustomObject]@{
-        Cat = $Cat; Titulo = $Titulo; Perde = $Perde; Risco = $Risco; Rec = $Rec; Run = $Run
+        Cat = $Cat; Titulo = $Titulo; Perde = $Perde; Risco = $Risco; Rec = $Rec; Run = $Run; Perfis = $Perfis
     })
 }
+# Perfis prontos (Gamer/Escritorio/Servidor): usados pelos botoes "Perfil ..." pra
+# pre-marcar os itens certos pro uso escolhido - a pessoa ainda revisa e clica em
+# "Aplicar selecionados" normalmente, nada roda sozinho so por escolher o perfil.
+$TodosPerfis = @("Gamer","Escritorio","Servidor")
 
 # ---- DIAGNOSTICO E SAUDE DO SISTEMA (verde/amarelo) ----
 Add-Tweak "Diagnostico e saude do sistema" "Verificar espaco em disco, RAM e saude fisica do(s) disco(s)" `
@@ -217,38 +221,38 @@ Add-Tweak "Aparencia / efeitos visuais" "Ajustar para MELHOR DESEMPENHO (desliga
     Definir-Registro $RegVisualFX "VisualFXSetting" 2
     Definir-Registro $RegDesktop "UserPreferencesMask" ([byte[]](0x90,0x12,0x03,0x80,0x10,0x00,0x00,0x00)) "Binary"
     "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Desativar animacoes de janelas" "Animacao ao minimizar/maximizar" "Verde" $true {
     Definir-Registro $RegMetrics "MinAnimate" "0" "String"; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Desativar transparencia (barra/menu)" "Efeito de vidro que gasta GPU" "Verde" $true {
     Definir-Registro "$HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" "EnableTransparency" 0; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Desativar sombras e Aero Peek" "Sombras e previa de janelas" "Verde" $true {
     Definir-Registro $RegDWM "EnableAeroPeek" 0
     Definir-Registro $RegDWM "AlwaysHibernateThumbnails" 0; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Mostrar so contorno ao arrastar janelas" "Janela cheia ao arrastar" "Verde" $true {
     Definir-Registro $RegDesktop "DragFullWindows" "0" "String"; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Menus instantaneos (sem delay)" "Atraso/fade dos menus" "Verde" $true {
     Definir-Registro $RegDesktop "MenuShowDelay" "0" "String"; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Desativar animacoes da barra de tarefas" "Animacoes da taskbar" "Verde" $true {
     Definir-Registro $RegAdvanced "TaskbarAnimations" 0
     Definir-Registro $RegAdvanced "ListviewAlphaSelect" 0
     Definir-Registro $RegAdvanced "ListviewShadow" 0; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Aparencia / efeitos visuais" "Desativar dicas, sugestoes e propaganda" "Sugestoes e anuncios do Windows" "Verde" $true {
     $cdm = "$HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
     Definir-Registro $cdm "SubscribedContent-338389Enabled" 0
     Definir-Registro $cdm "SubscribedContent-310093Enabled" 0
     Definir-Registro $cdm "SystemPaneSuggestionsEnabled" 0; "ok"
-}
+} $TodosPerfis
 $percaAltoDesempenho = if ($Global:Perfil.EhNotebook) { "Gasta mais energia - NAO recomendado em notebook (reduz bateria)" } else { "Gasta um pouco mais de energia (ideal desktop, detectado aqui)" }
 Add-Tweak "Aparencia / efeitos visuais" "Plano de energia: ALTO DESEMPENHO" $percaAltoDesempenho "Verde" (-not $Global:Perfil.EhNotebook) {
     powercfg -setactive SCHEME_MIN | Out-Null; "ok"
-}
+} @("Gamer","Servidor")
 
 # ---- LIMPEZA (verde) ----
 Add-Tweak "Limpeza" "Limpar arquivos temporarios (Temp/Prefetch/cache)" "Nada seu - so lixo do sistema" "Verde" $true {
@@ -264,28 +268,28 @@ Add-Tweak "Limpeza" "Limpar arquivos temporarios (Temp/Prefetch/cache)" "Nada se
     }
     foreach ($a in $alvos) { Remove-Item $a -Recurse -Force -ErrorAction SilentlyContinue }
     "liberado ~$([math]::Round($antes/1MB,1)) MB"
-}
+} $TodosPerfis
 Add-Tweak "Limpeza" "Esvaziar a Lixeira" "Itens da lixeira (sem volta)" "Amarelo" $false {
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue; "ok"
-}
+} $TodosPerfis
 
 # ---- SERVICOS SEGUROS (verde) ----
-Add-Tweak "Servicos - seguros" "Telemetria / Experiencias Conectadas (DiagTrack)" "Envio de dados de uso a Microsoft" "Verde" $true { Apl-Servico "DiagTrack" }
-Add-Tweak "Servicos - seguros" "Roteamento WAP Push (dmwappushservice)" "Nada perceptivel" "Verde" $true { Apl-Servico "dmwappushservice" }
-Add-Tweak "Servicos - seguros" "SysMain / Superfetch" "Pre-carregamento; em SSD nao faz falta" "Verde" $true { Apl-Servico "SysMain" }
-Add-Tweak "Servicos - seguros" "Servico de Fax" "Enviar/receber fax" "Verde" $true { Apl-Servico "Fax" }
-Add-Tweak "Servicos - seguros" "Modo Demonstracao de Loja (RetailDemo)" "Modo de demo de loja (inutil em casa)" "Verde" $true { Apl-Servico "RetailDemo" }
-Add-Tweak "Servicos - seguros" "Registro Remoto (RemoteRegistry)" "Editar registro pela rede (melhor off)" "Verde" $true { Apl-Servico "RemoteRegistry" }
-Add-Tweak "Servicos - seguros" "Relatorio de Erros do Windows (WerSvc)" "Envio de relatorios de erro" "Verde" $true { Apl-Servico "WerSvc" }
-Add-Tweak "Servicos - seguros" "Gerenciador de Mapas Baixados (MapsBroker)" "Mapas offline do app Mapas" "Verde" $true { Apl-Servico "MapsBroker" }
-Add-Tweak "Servicos - seguros" "Compartilhamento do Windows Media (WMPNetworkSvc)" "Compartilhar biblioteca na rede" "Verde" $true { Apl-Servico "WMPNetworkSvc" }
+Add-Tweak "Servicos - seguros" "Telemetria / Experiencias Conectadas (DiagTrack)" "Envio de dados de uso a Microsoft" "Verde" $true { Apl-Servico "DiagTrack" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Roteamento WAP Push (dmwappushservice)" "Nada perceptivel" "Verde" $true { Apl-Servico "dmwappushservice" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "SysMain / Superfetch" "Pre-carregamento; em SSD nao faz falta" "Verde" $true { Apl-Servico "SysMain" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Servico de Fax" "Enviar/receber fax" "Verde" $true { Apl-Servico "Fax" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Modo Demonstracao de Loja (RetailDemo)" "Modo de demo de loja (inutil em casa)" "Verde" $true { Apl-Servico "RetailDemo" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Registro Remoto (RemoteRegistry)" "Editar registro pela rede (melhor off)" "Verde" $true { Apl-Servico "RemoteRegistry" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Relatorio de Erros do Windows (WerSvc)" "Envio de relatorios de erro" "Verde" $true { Apl-Servico "WerSvc" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Gerenciador de Mapas Baixados (MapsBroker)" "Mapas offline do app Mapas" "Verde" $true { Apl-Servico "MapsBroker" } $TodosPerfis
+Add-Tweak "Servicos - seguros" "Compartilhamento do Windows Media (WMPNetworkSvc)" "Compartilhar biblioteca na rede" "Verde" $true { Apl-Servico "WMPNetworkSvc" } $TodosPerfis
 
 # ---- SERVICOS XBOX (amarelo) ----
 $percaXbox = if ($Global:Perfil.TemXbox) { "detectei app/controle Xbox neste PC - login em servicos Xbox" } else { "nenhum uso de Xbox detectado neste PC - login em servicos Xbox" }
-Add-Tweak "Servicos - Xbox" "Xbox Live - Autenticacao (XblAuthManager)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblAuthManager" }
-Add-Tweak "Servicos - Xbox" "Xbox Live - Salvar Jogo (XblGameSave)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblGameSave" }
-Add-Tweak "Servicos - Xbox" "Xbox Live - Rede (XboxNetApiSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxNetApiSvc" }
-Add-Tweak "Servicos - Xbox" "Xbox - Entrada (XboxGipSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxGipSvc" }
+Add-Tweak "Servicos - Xbox" "Xbox Live - Autenticacao (XblAuthManager)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblAuthManager" } @("Escritorio","Servidor")
+Add-Tweak "Servicos - Xbox" "Xbox Live - Salvar Jogo (XblGameSave)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XblGameSave" } @("Escritorio","Servidor")
+Add-Tweak "Servicos - Xbox" "Xbox Live - Rede (XboxNetApiSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxNetApiSvc" } @("Escritorio","Servidor")
+Add-Tweak "Servicos - Xbox" "Xbox - Entrada (XboxGipSvc)" $percaXbox "Amarelo" (-not $Global:Perfil.TemXbox) { Apl-Servico "XboxGipSvc" } @("Escritorio","Servidor")
 
 # ---- SERVICOS CUIDADO (amarelo/vermelho) ----
 Add-Tweak "Servicos - cuidado" "Teclado de Toque (TabletInputService)" "Teclado virtual / emoji (Win+.)" "Amarelo" $false { Apl-Servico "TabletInputService" }
@@ -298,10 +302,10 @@ Add-Tweak "Servicos - cuidado" "Notificacoes de Impressao (PrintNotify)" "Avisos
 # ---- APPS EM 2o PLANO + TELEMETRIA (verde) ----
 Add-Tweak "Apps e telemetria" "Desativar apps da Loja em segundo plano" "Notificacoes em tempo real de apps da Loja" "Verde" $true {
     Definir-Registro "$HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" "GlobalUserDisabled" 1; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Apps e telemetria" "Reduzir telemetria ao minimo" "Nada util; para de mandar diagnostico" "Verde" $true {
     Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0; "ok"
-}
+} $TodosPerfis
 
 # ---- TAREFAS AGENDADAS (verde) ----
 Add-Tweak "Tarefas agendadas" "Desativar tarefas de telemetria/compatibilidade" "Coleta de dados em segundo plano" "Verde" $true {
@@ -322,14 +326,14 @@ Add-Tweak "Tarefas agendadas" "Desativar tarefas de telemetria/compatibilidade" 
         Disable-ScheduledTask -TaskName $nome -TaskPath ($caminho + "\") -ErrorAction SilentlyContinue | Out-Null
     }
     "ok"
-}
+} $TodosPerfis
 
 # ---- REDE (verde) ----
 Add-Tweak "Rede" "Trocar DNS para Cloudflare (1.1.1.1 - rapido e privado)" "Usa DNS do provedor (reversivel no item ao lado)" "Verde" $false {
     $ad = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" }
     foreach ($a in $ad) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses ("1.1.1.1","1.0.0.1") -ErrorAction Stop }
     "DNS Cloudflare aplicado"
-}
+} @("Gamer")
 Add-Tweak "Rede" "Voltar DNS para AUTOMATICO (do provedor)" "Desfaz a troca de DNS acima" "Amarelo" $false {
     $ad = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" }
     foreach ($a in $ad) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses -ErrorAction Stop }
@@ -338,11 +342,11 @@ Add-Tweak "Rede" "Voltar DNS para AUTOMATICO (do provedor)" "Desfaz a troca de D
 Add-Tweak "Rede" "Desativar Network Throttling" "Nada relevante; libera a rede em 2o plano" "Verde" $true {
     Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xffffffff
     Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness" 0; "ok"
-}
+} $TodosPerfis
 Add-Tweak "Rede" "Limpar cache de DNS agora" "Nada - so limpa enderecos antigos" "Verde" $true {
     Clear-DnsClientCache -ErrorAction SilentlyContinue
     ipconfig /flushdns | Out-Null; "ok"
-}
+} $TodosPerfis
 
 # ---- DISCO (dinamico: detecta HD x SSD por volume) ----
 $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
@@ -357,7 +361,7 @@ foreach ($v in $volumes) {
         elseif (`$t -eq 'HDD') { Optimize-Volume -DriveLetter '$L' -Defrag -ErrorAction Stop }
         else { Optimize-Volume -DriveLetter '$L' -ErrorAction Stop }
         'otimizado'
-"@))
+"@)) $TodosPerfis
 }
 
 # ---- BLOATWARE (dinamico: so lista o que esta instalado) ----
@@ -384,7 +388,7 @@ foreach ($app in $bloat) {
     Add-Tweak "Remover apps inuteis" "Remover: $nm" "O app some (pode reinstalar pela Store)" "Verde" $false ([scriptblock]::Create(@"
         Remove-AppxPackage -Package '$pfn' -ErrorAction Stop
         'removido'
-"@))
+"@)) $TodosPerfis
 }
 
 # ---- MAXIMA PERFORMANCE (CPU + Sistema) - mesmos itens da versao de menu ----
@@ -395,7 +399,7 @@ Add-Tweak "Maxima performance" "Garantir TODOS os nucleos liberados no boot" `
     "Remove qualquer limite de processadores (msconfig so LIMITA, isto de fato libera)" "Verde" $false {
     cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
     "ok (limite de nucleos removido, se houvesse algum)"
-}
+} @("Gamer","Servidor")
 $percaCpuMax = "Nada perceptivel; ociosa a CPU ainda baixa o clock (monitoramento continua vendo carga real)"
 $percaCpuMax += if ($Global:Perfil.EhNotebook) { " - NAO recomendado em notebook (reduz bateria)" } else { " - recomendado (desktop detectado)" }
 Add-Tweak "Maxima performance" "CPU sempre pronta: core parking OFF + turbo liberado" $percaCpuMax "Verde" (-not $Global:Perfil.EhNotebook) {
@@ -405,26 +409,30 @@ Add-Tweak "Maxima performance" "CPU sempre pronta: core parking OFF + turbo libe
     powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
     powercfg -setactive SCHEME_CURRENT | Out-Null
     "ok"
-}
+} @("Gamer","Servidor")
 Add-Tweak "Maxima performance" "Prioridade para o programa em foco" `
     "Da mais CPU pro app que voce esta usando agora" "Verde" $false {
     Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 38; "ok"
-}
+} @("Gamer")
+Add-Tweak "Maxima performance" "Prioridade pros servicos em 2o plano (correto pra servidor)" `
+    "Servidor nao tem 'janela em foco' de verdade - o valor certo favorece servicos, nao apps" "Verde" $false {
+    Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 24; "ok"
+} @("Servidor")
 Add-Tweak "Maxima performance" "Desativar Game DVR / gravacao em 2o plano" `
     "Para a captura de tela em 2o plano da Xbox Game Bar (libera CPU/GPU/RAM)" "Verde" $false {
     Definir-Registro "HKCU:\System\GameConfigStore" "GameDVR_Enabled" 0
     Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
     "ok"
-}
+} $TodosPerfis
 $percaHags = "Pode reduzir latencia da GPU. Precisa REINICIAR e ter GPU/driver compativel"
 $percaHags += if ($Global:Perfil.TemGpuDedicada) { " - GPU dedicada detectada, vale experimentar" } else { " - so GPU integrada detectada, ganho provavelmente pequeno" }
 Add-Tweak "Maxima performance" "Ativar HAGS (agendamento de GPU por hardware)" $percaHags "Amarelo" $Global:Perfil.TemGpuDedicada {
     Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2; "ok"
-}
+} @("Gamer")
 Add-Tweak "Maxima performance" "Tirar o atraso dos programas de inicializacao" `
     "Apps de startup abrem sem o atraso artificial que o Windows aplica" "Verde" $false {
     Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" "StartupDelayInMSec" 0; "ok"
-}
+} @("Gamer","Servidor")
 
 # ---- AJUSTES DO WINDOWS 11 - so entra no catalogo se o sistema for W11 ----
 # (a versao de menu mostra o item e avisa "nao se aplica" no Windows 10; aqui
@@ -436,25 +444,25 @@ if ($Global:Win11) {
         reg add $clsid /f /ve | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "reg add falhou (codigo $LASTEXITCODE)" }
         "ok"
-    }
+    } @("Escritorio")
     Add-Tweak "Ajustes do Windows 11" "Desativar os WIDGETS da barra de tarefas" `
         "Tira o painel de noticias/clima (fica em 2o plano consumindo RAM)" "Verde" $false {
         # So a chave HKCU (usuario) - a de HKLM\...\Policies\Dsh fica de fora aqui
         # de proposito: e territorio de GPO e a Definir-Registro da GUI ainda nao
         # tem a checagem de dominio/GPO que a versao de menu tem.
         Definir-Registro $RegAdvanced "TaskbarDa" 0; "ok"
-    }
+    } $TodosPerfis
     Add-Tweak "Ajustes do Windows 11" "Desativar o CHAT (Teams) da barra de tarefas" `
         "Remove o icone do Microsoft Teams (consumidor) da barra" "Verde" $false {
         Definir-Registro $RegAdvanced "TaskbarMn" 0; "ok"
-    }
+    } @("Gamer","Servidor")
     Add-Tweak "Ajustes do Windows 11" "Reiniciar o Explorer (aplica os ajustes do W11 acima)" `
         "A barra de tarefas pisca e recarrega por um instante" "Amarelo" $false {
         Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
         if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer }
         "ok"
-    }
+    } $TodosPerfis
 }
 
 # ======================================================================
@@ -495,6 +503,12 @@ if ($Global:Win11) {
           <Button x:Name="BtnMedir" Content="  Atualizar medicao  " Background="#FF3A3A55" Foreground="#FFFFFFFF" Padding="6,6" Margin="0,0,8,0" BorderThickness="0"/>
         </WrapPanel>
         <WrapPanel Margin="0,8,0,0">
+          <TextBlock Text="Perfis prontos: " Foreground="#FFCCCCDD" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+          <Button x:Name="BtnPerfilGamer" Content="  Gamer  " Background="#FF6C5CE7" Foreground="#FFFFFFFF" FontWeight="Bold" Padding="6,4" Margin="0,0,8,0" BorderThickness="0"/>
+          <Button x:Name="BtnPerfilEscritorio" Content="  Escritorio  " Background="#FF6C5CE7" Foreground="#FFFFFFFF" FontWeight="Bold" Padding="6,4" Margin="0,0,8,0" BorderThickness="0"/>
+          <Button x:Name="BtnPerfilServidor" Content="  Servidor  " Background="#FF6C5CE7" Foreground="#FFFFFFFF" FontWeight="Bold" Padding="6,4" Margin="0,0,8,0" BorderThickness="0"/>
+        </WrapPanel>
+        <WrapPanel Margin="0,8,0,0">
           <Border Background="#FF2ECC71" Width="14" Height="14" CornerRadius="3"/><TextBlock Text=" SEGURO (pode desativar)   " Foreground="#FFCCCCDD" FontSize="11" Margin="4,0,12,0"/>
           <Border Background="#FFF1C40F" Width="14" Height="14" CornerRadius="3"/><TextBlock Text=" CUIDADO (so se nao usa)   " Foreground="#FFCCCCDD" FontSize="11" Margin="4,0,12,0"/>
           <Border Background="#FFE74C3C" Width="14" Height="14" CornerRadius="3"/><TextBlock Text=" RISCO (so se souber)" Foreground="#FFCCCCDD" FontSize="11" Margin="4,0,12,0"/>
@@ -531,6 +545,9 @@ $BtnLimpar    = $win.FindName("BtnLimpar")
 $BtnPonto     = $win.FindName("BtnPonto")
 $BtnRestaurar = $win.FindName("BtnRestaurar")
 $BtnMedir     = $win.FindName("BtnMedir")
+$BtnPerfilGamer      = $win.FindName("BtnPerfilGamer")
+$BtnPerfilEscritorio = $win.FindName("BtnPerfilEscritorio")
+$BtnPerfilServidor   = $win.FindName("BtnPerfilServidor")
 
 # Titulo/subtitulo com o SO real (detectado no topo do script), em vez do
 # "Windows 10" fixo que a janela tinha antes.
@@ -644,6 +661,14 @@ $BtnPonto.Add_Click({
 })
 
 $BtnMedir.Add_Click({ Atualizar-Perf; Log "Medicao atualizada." })
+
+function Marcar-Perfil([string]$Nome) {
+    foreach ($c in $Global:Cards) { $c.Chk.IsChecked = [bool]($c.Tweak.Perfis -contains $Nome) }
+    Log "Perfil $Nome selecionado - revise as marcacoes e clique em 'Aplicar selecionados'."
+}
+$BtnPerfilGamer.Add_Click({ Marcar-Perfil "Gamer" })
+$BtnPerfilEscritorio.Add_Click({ Marcar-Perfil "Escritorio" })
+$BtnPerfilServidor.Add_Click({ Marcar-Perfil "Servidor" })
 
 $BtnAplicar.Add_Click({
     $marcados = @($Global:Cards | Where-Object { $_.Chk.IsChecked })

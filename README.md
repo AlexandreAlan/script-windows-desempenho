@@ -83,23 +83,41 @@ os itens e clique em **Aplicar selecionados**.
 
 ## Menu
 
+A versão de menu é organizada em **categorias** — escolha uma letra pra abrir o
+submenu com as opções daquela área (os números de cada opção são os mesmos de
+sempre, só a navegação por cima mudou):
+
 ```
-1 - Aparencia / efeitos visuais
-2 - Limpeza (temporarios + lixeira)
-3 - Programas de inicializacao (startup)
-4 - Servicos / processos em segundo plano
-5 - Tarefas agendadas (telemetria)
-6 - Remover apps inuteis (Candy Crush, etc.)
-7 - Otimizar disco (HD/SSD automatico)
-8 - Ajustes de rede (DNS rapido + throttling)
-9 - Maxima performance (CPU + sistema, monitoring-safe)
-10 - Ajustes do Windows 11 (menu classico, widgets, Teams)
-11 - Ver melhora de desempenho (antes x depois)
-12 - APLICAR TUDO (passa por todas as secoes)
-13 - RESTAURAR (desfazer servicos + inicializacao + registro)
-14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)
+A - Sistema e limpeza        (aparencia, limpeza, inicializacao, disco)
+B - Servicos e privacidade   (servicos, tarefas agendadas, bloatware)
+C - Performance e jogos      (maxima performance, ajustes Windows 11)
+D - Rede                     (DNS, throttling)
+P - PERFIS PRONTOS           (Gamer / Escritorio / Servidor)
+M - Diagnostico e manutencao (diagnostico, comparar, restaurar)
+T - APLICAR TUDO (passa por todas as secoes)
 0 - Sair
 ```
+
+### Perfis Prontos (P)
+
+Em vez de passar item por item, aplica de uma vez a lista certa de otimizações
+pro uso escolhido — uma confirmação geral (+ ponto de restauração) e pronto,
+sem perguntar Y/N em cada item:
+
+- **Gamer** — responsividade/FPS: aparência leve, Máxima Performance completa
+  (núcleos liberados, core parking off, turbo 100%, Alto Desempenho — pula
+  automaticamente se detectar notebook, pra não estourar a bateria), prioridade
+  pro app em foco, HAGS (se tiver GPU dedicada), DNS Cloudflare. **Mantém o
+  Xbox ligado.**
+- **Escritório** — produtividade, conservador: limpeza + serviços seguros +
+  bloatware fora, menu de contexto clássico (Windows 11), **mantém o Teams** e
+  não mexe em plano de energia/DNS (pensado pra rede corporativa).
+- **Servidor** — throughput/estabilidade: mesma base segura, prioridade pros
+  **serviços em segundo plano** (não pro "app em foco", que não existe em uso
+  normal de servidor), núcleos/turbo liberados, sem UI desnecessária.
+
+Na versão **gráfica**, os botões "Perfil Gamer/Escritório/Servidor" só marcam
+as caixinhas certas — você ainda revisa e clica em "Aplicar selecionados".
 
 ## O que cada seção faz
 
@@ -228,6 +246,13 @@ Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
 
 ## Histórico de versões
 
+- **v1.4.0** — **menu reorganizado em categorias** (Sistema, Serviços, Performance,
+  Rede, Diagnóstico) na versão de terminal — as 14 seções continuam as mesmas, só
+  a navegação virou 2 níveis. E os **Perfis Prontos** (Gamer/Escritório/Servidor):
+  aplica de uma vez a lista certa de otimizações pro uso escolhido, sem perguntar
+  item a item (na versão gráfica, só pré-marca as caixinhas certas). Inclui um
+  ajuste novo específico pra servidor (prioridade pros serviços em 2º plano, em
+  vez de pro app em foco).
 - **v1.3.0** — **detecção adaptativa de perfil da máquina** nas duas versões: o script
   agora identifica notebook x desktop (bateria/tipo de chassi), GPU dedicada x
   integrada e uso de Xbox (controle detectado), e usa isso pra **recomendar (com

@@ -298,15 +298,17 @@ function Definir-Registro {
 }
 
 function Item {
-    param([string]$Titulo,[string]$Descricao,[scriptblock]$Acao)
-    Write-Host ""
-    Write-Host ("-" * 64) -ForegroundColor DarkCyan
-    Write-Host "  $Titulo" -ForegroundColor Cyan
-    if ($Descricao) { Write-Host "  $Descricao" -ForegroundColor Gray }
-    if (Perguntar "Aplicar?") {
+    param([string]$Titulo,[string]$Descricao,[scriptblock]$Acao,[switch]$Silencioso)
+    if (-not $Silencioso) {
+        Write-Host ""
+        Write-Host ("-" * 64) -ForegroundColor DarkCyan
+        Write-Host "  $Titulo" -ForegroundColor Cyan
+        if ($Descricao) { Write-Host "  $Descricao" -ForegroundColor Gray }
+    }
+    if ($Silencioso -or (Perguntar "Aplicar?")) {
         try {
             & $Acao
-            Write-Host "   [OK] Aplicado." -ForegroundColor Green
+            Write-Host "   [OK] Aplicado: $Titulo" -ForegroundColor Green
             $Global:Aplicadas++; Add-Log "OK" $Titulo
         } catch {
             # Nao quebra a tela com vermelho: vira aviso amigavel + registra no log.
@@ -321,22 +323,24 @@ function Salvar-BackupSvc {
 }
 
 function Desativar-Servico {
-    param([string]$Nome,[string]$Amigavel,[string]$Perde,[Nullable[bool]]$Recomendado=$null,[string]$Motivo="")
+    param([string]$Nome,[string]$Amigavel,[string]$Perde,[Nullable[bool]]$Recomendado=$null,[string]$Motivo="",[switch]$Silencioso)
     $svc = Get-Service -Name $Nome -ErrorAction SilentlyContinue
     if (-not $svc) { return }
-    Write-Host ""
-    Write-Host ("-" * 64) -ForegroundColor DarkCyan
-    Write-Host "  $Amigavel  ($Nome)" -ForegroundColor Cyan
-    Write-Host "  Voce PERDE: $Perde" -ForegroundColor Yellow
-    if ($null -ne $Recomendado) {
-        if ($Recomendado) {
-            Write-Host "  [RECOMENDADO PRA ESTE PC] $Motivo" -ForegroundColor Green
-        } else {
-            Write-Host "  [NAO RECOMENDADO NESTE PC] $Motivo" -ForegroundColor Red
+    if (-not $Silencioso) {
+        Write-Host ""
+        Write-Host ("-" * 64) -ForegroundColor DarkCyan
+        Write-Host "  $Amigavel  ($Nome)" -ForegroundColor Cyan
+        Write-Host "  Voce PERDE: $Perde" -ForegroundColor Yellow
+        if ($null -ne $Recomendado) {
+            if ($Recomendado) {
+                Write-Host "  [RECOMENDADO PRA ESTE PC] $Motivo" -ForegroundColor Green
+            } else {
+                Write-Host "  [NAO RECOMENDADO NESTE PC] $Motivo" -ForegroundColor Red
+            }
         }
+        Write-Host "  Estado atual: $($svc.Status) / inicio: $((Get-Service $Nome).StartType)" -ForegroundColor DarkGray
     }
-    Write-Host "  Estado atual: $($svc.Status) / inicio: $((Get-Service $Nome).StartType)" -ForegroundColor DarkGray
-    if (Perguntar "Desativar?") {
+    if ($Silencioso -or (Perguntar "Desativar?")) {
         try {
             if (-not $Global:BackupSvc.ContainsKey($Nome)) {
                 $Global:BackupSvc[$Nome] = (Get-Service $Nome).StartType.ToString()
@@ -344,7 +348,7 @@ function Desativar-Servico {
             Stop-Service -Name $Nome -Force -ErrorAction SilentlyContinue
             Set-Service -Name $Nome -StartupType Disabled -ErrorAction Stop
             Salvar-BackupSvc
-            Write-Host "   [OK] Desativado (backup salvo)." -ForegroundColor Green
+            Write-Host "   [OK] Desativado (backup salvo): $Amigavel" -ForegroundColor Green
             $Global:Aplicadas++; Add-Log "OK" "Servico desativado: $Amigavel ($Nome)"
         } catch {
             Write-Host "   [AVISO] Nao foi possivel desativar: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -989,11 +993,178 @@ function Secao-Performance {
 }
 
 # ======================================================================
+#  PERFIS PRONTOS (Gamer / Escritorio / Servidor)
+# ======================================================================
+# Aplica direto (sem perguntar item a item) uma lista curada pro uso escolhido -
+# igual ao "Aplicar Tudo", so que com o conjunto certo pro perfil. Reaproveita os
+# mesmos Item/Desativar-Servico/Definir-Registro de sempre (modo -Silencioso),
+# entao os backups de servico/registro e o log de auditoria funcionam igual.
+function Aplicar-Perfil {
+    param([ValidateSet("Gamer","Escritorio","Servidor")][string]$Nome)
+    Titulo-Secao "PERFIL PRONTO: $($Nome.ToUpper())"
+    Ponto-Restauracao
+
+    Item "Visual pra desempenho (sem animacoes/transparencia/sombras)" "" -Silencioso {
+        Definir-Registro $RegVisualFX "VisualFXSetting" 2
+        Definir-Registro $RegDesktop "UserPreferencesMask" ([byte[]](0x90,0x12,0x03,0x80,0x10,0x00,0x00,0x00)) "Binary"
+        Definir-Registro $RegMetrics "MinAnimate" "0" "String"
+        Definir-Registro $RegDWM "EnableAeroPeek" 0
+        Definir-Registro $RegDWM "AlwaysHibernateThumbnails" 0
+        Definir-Registro $RegAdvanced "TaskbarAnimations" 0
+    }
+    Item "Limpeza de temporarios + lixeira" "" -Silencioso {
+        $alvos = @("$env:TEMP\*","$env:WINDIR\Temp\*","$env:WINDIR\Prefetch\*",
+                   "$env:LOCALAPPDATA\Microsoft\Windows\INetCache\*")
+        foreach ($a in $alvos) { Remove-Item $a -Recurse -Force -ErrorAction SilentlyContinue }
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+    }
+
+    $servicosSeguros = @(
+        @{N="DiagTrack";A="Telemetria / Experiencias Conectadas"},
+        @{N="dmwappushservice";A="Roteamento WAP Push"},
+        @{N="SysMain";A="SysMain (Superfetch)"},
+        @{N="Fax";A="Servico de Fax"},
+        @{N="RetailDemo";A="Modo Demonstracao de Loja"},
+        @{N="RemoteRegistry";A="Registro Remoto"},
+        @{N="WerSvc";A="Relatorio de Erros do Windows"},
+        @{N="MapsBroker";A="Gerenciador de Mapas Baixados"},
+        @{N="WMPNetworkSvc";A="Compartilhamento do Windows Media"}
+    )
+    foreach ($s in $servicosSeguros) { Desativar-Servico $s.N $s.A "-" -Silencioso }
+
+    if ($Nome -ne "Gamer") {
+        foreach ($x in "XblAuthManager","XblGameSave","XboxNetApiSvc","XboxGipSvc") {
+            Desativar-Servico $x "Xbox" "-" -Silencioso
+        }
+    }
+
+    Item "Tarefas agendadas de telemetria/compatibilidade" "" -Silencioso {
+        $tarefas = @(
+            "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
+            "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+            "\Microsoft\Windows\Autochk\Proxy",
+            "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+            "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
+            "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector",
+            "\Microsoft\Windows\Feedback\Siuf\DmClient",
+            "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload",
+            "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
+        )
+        foreach ($t in $tarefas) {
+            $nomeT = Split-Path $t -Leaf
+            $caminhoT = Split-Path $t -Parent
+            Disable-ScheduledTask -TaskName $nomeT -TaskPath ($caminhoT + "\") -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
+    Item "Remover apps inuteis detectados (bloatware)" "" -Silencioso {
+        $padroes = @(
+            "*king.com*","*CandyCrush*","*BubbleWitch*","*Microsoft.3DBuilder*",
+            "*Microsoft.MixedReality.Portal*","*Microsoft.Microsoft3DViewer*","*Microsoft.Print3D*",
+            "*Microsoft.SkypeApp*","*Microsoft.GetHelp*","*Microsoft.Getstarted*","*Microsoft.Messaging*",
+            "*Microsoft.OneConnect*","*Microsoft.People*","*Microsoft.WindowsFeedbackHub*",
+            "*Microsoft.WindowsMaps*","*Microsoft.YourPhone*","*Microsoft.ZuneMusic*","*Microsoft.ZuneVideo*",
+            "*Microsoft.BingNews*","*Microsoft.BingWeather*","*Microsoft.MicrosoftSolitaireCollection*",
+            "*Microsoft.WindowsAlarms*","*Microsoft.MicrosoftStickyNotes*","*Microsoft.MSPaint*",
+            "*Microsoft.Wallet*","*Microsoft.Office.OneNote*","*Disney*","*Spotify*","*Facebook*",
+            "*Twitter*","*Netflix*","*Microsoft.MicrosoftOfficeHub*","*Microsoft.Todos*","*Clipchamp*"
+        )
+        $instalados = @()
+        foreach ($pat in $padroes) { $instalados += Get-AppxPackage -Name $pat -ErrorAction SilentlyContinue }
+        foreach ($app in ($instalados | Sort-Object Name -Unique)) {
+            Remove-AppxPackage -Package $app.PackageFullName -ErrorAction SilentlyContinue
+        }
+    }
+    Item "Otimizar disco (TRIM/desfrag automatico por tipo)" "" -Silencioso {
+        $volumes = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" }
+        foreach ($v in $volumes) {
+            $t = Obter-TipoDisco $v.DriveLetter
+            if ($t -eq "SSD") { Optimize-Volume -DriveLetter $v.DriveLetter -ReTrim -ErrorAction SilentlyContinue }
+            elseif ($t -eq "HDD") { Optimize-Volume -DriveLetter $v.DriveLetter -Defrag -ErrorAction SilentlyContinue }
+        }
+    }
+    Item "Desativar Network Throttling + limpar cache DNS" "" -Silencioso {
+        Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xffffffff
+        Definir-Registro "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness" 0
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+        ipconfig /flushdns | Out-Null
+    }
+    if ($Nome -eq "Gamer") {
+        Item "Trocar DNS para Cloudflare (mais rapido pra jogos online)" "" -Silencioso {
+            $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" }
+            foreach ($a in $adapters) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses ("1.1.1.1","1.0.0.1") -ErrorAction SilentlyContinue }
+        }
+    }
+
+    if ($Nome -in "Gamer","Servidor") {
+        if (-not ($Nome -eq "Gamer" -and $Global:Perfil.EhNotebook)) {
+            Item "Nucleos liberados no boot + core parking off + turbo 100%" "" -Silencioso {
+                cmd /c "bcdedit /deletevalue {current} numproc" 2>$null | Out-Null
+                powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+                powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100      | Out-Null
+                powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+                powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+                powercfg -setactive SCHEME_CURRENT | Out-Null
+            }
+            Item "Plano de energia: ALTO DESEMPENHO" "" -Silencioso { powercfg -setactive SCHEME_MIN | Out-Null }
+        }
+    }
+    if ($Nome -eq "Gamer") {
+        Item "Prioridade pro app em foco (mais resposta em jogo)" "" -Silencioso {
+            Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 38
+        }
+    }
+    if ($Nome -eq "Servidor") {
+        Item "Prioridade pros servicos em 2o plano (correto pra servidor)" `
+            "Servidor nao tem 'janela em foco' de verdade - o valor certo favorece servicos, nao apps." -Silencioso {
+            Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 24
+        }
+    }
+    Item "Desativar Game DVR / gravacao em 2o plano" "" -Silencioso {
+        Definir-Registro "HKCU:\System\GameConfigStore" "GameDVR_Enabled" 0
+        Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" 0
+        Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
+    }
+    if ($Nome -eq "Gamer" -and $Global:Perfil.TemGpuDedicada) {
+        Item "Ativar HAGS (agendamento de GPU por hardware)" "" -Silencioso {
+            Definir-Registro "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode" 2
+        }
+    }
+    if ($Nome -in "Gamer","Servidor") {
+        Item "Tirar o atraso dos programas de inicializacao" "" -Silencioso {
+            Definir-Registro "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" "StartupDelayInMSec" 0
+        }
+    }
+
+    if ($Global:Win11) {
+        if ($Nome -eq "Escritorio") {
+            Item "Menu de contexto classico (produtividade)" "" -Silencioso {
+                $clsid = "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+                reg add $clsid /f /ve | Out-Null
+                Registrar-KeyParaApagar "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+            }
+        }
+        Item "Desativar os WIDGETS da barra de tarefas" "" -Silencioso {
+            Definir-Registro $RegAdvanced "TaskbarDa" 0
+            Definir-Registro "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" "AllowNewsAndInterests" 0
+        }
+        if ($Nome -ne "Escritorio") {
+            Item "Desativar o CHAT (Teams) da barra de tarefas" "" -Silencioso {
+                Definir-Registro $RegAdvanced "TaskbarMn" 0
+            }
+        }
+        Item "Reiniciar o Explorer para aplicar os ajustes visuais" "" -Silencioso { Reiniciar-Explorer }
+    }
+
+    Titulo-Secao "PERFIL $($Nome.ToUpper()) APLICADO"
+    Secao-Comparar
+}
+
+# ======================================================================
 #  MENU PRINCIPAL
 # ======================================================================
-function Mostrar-Menu {
+function Mostrar-Cabecalho {
+    param([string]$Subtitulo)
     Clear-Host
-    # mede agora e guarda o inicial na 1a vez
     $agora = Medir-Desempenho
     if (-not $Global:DesempenhoInicial) { $Global:DesempenhoInicial = $agora }
     $ini = $Global:DesempenhoInicial
@@ -1001,6 +1172,7 @@ function Mostrar-Menu {
     Write-Host ""
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host ("          OTIMIZADOR TOTAL - {0} (leve e rapido)" -f $Global:NomeSO.ToUpper()) -ForegroundColor White
+    if ($Subtitulo) { Write-Host ("          $Subtitulo") -ForegroundColor DarkGray }
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host ("   DESEMPENHO AGORA:  RAM em uso {0}%  | Livre {1} GB  | Processos {2}  | Servicos ativos {3}" -f `
         $agora.RamUsoPct, $agora.RamLivreGB, $agora.Processos, $agora.ServicosAtivos) -ForegroundColor Cyan
@@ -1014,64 +1186,122 @@ function Mostrar-Menu {
     Write-Host ("   PERFIL: {0} | GPU: {1} | RAM total: {2} GB | Xbox: {3}" -f `
         $tipoChassi, $gpuResumo, $Global:Perfil.RamTotalGB, $(if ($Global:Perfil.TemXbox) {"sim"} else {"nao"})) -ForegroundColor DarkCyan
     Write-Host "  ==============================================================" -ForegroundColor Magenta
-    Write-Host "   1 - Aparencia / efeitos visuais" -ForegroundColor Gray
-    Write-Host "   2 - Limpeza (temporarios + lixeira)" -ForegroundColor Gray
-    Write-Host "   3 - Programas de inicializacao (startup)" -ForegroundColor Gray
-    Write-Host "   4 - Servicos / processos em segundo plano" -ForegroundColor Gray
-    Write-Host "   5 - Tarefas agendadas (telemetria)" -ForegroundColor Gray
-    Write-Host "   6 - Remover apps inuteis (Candy Crush, etc.)" -ForegroundColor Gray
-    Write-Host "   7 - Otimizar disco (HD/SSD automatico)" -ForegroundColor Gray
-    Write-Host "   8 - Ajustes de rede (DNS rapido + throttling)" -ForegroundColor Gray
-    Write-Host "   9 - Maxima performance (CPU + sistema, monitoring-safe)" -ForegroundColor Gray
-    Write-Host ("  10 - Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })) -ForegroundColor Gray
-    Write-Host "  11 - Ver melhora de desempenho (antes x depois)" -ForegroundColor Cyan
-    Write-Host "  12 - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
-    Write-Host "  13 - RESTAURAR (desfazer servicos + inicializacao + registro)" -ForegroundColor Yellow
-    Write-Host "  14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)" -ForegroundColor Gray
+}
+
+# Submenu generico: mostra um titulo + lista de itens (Num/Rotulo/Acao) e fica
+# num loop ate a pessoa escolher "0 - Voltar". Reaproveitado pelas categorias.
+function Mostrar-Submenu {
+    param([string]$Titulo,[array]$Itens)
+    do {
+        Mostrar-Cabecalho $Titulo
+        foreach ($it in $Itens) { Write-Host ("   {0} - {1}" -f $it.Num, $it.Rotulo) -ForegroundColor Gray }
+        Write-Host "   0 - Voltar ao menu principal" -ForegroundColor Gray
+        Write-Host "  ==============================================================" -ForegroundColor Magenta
+        Write-Host "   Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas" -ForegroundColor DarkGray
+        Write-Host ""
+        $op = Read-Host "  Escolha uma opcao"
+        if ($op -eq "0") { return }
+        $escolhido = $Itens | Where-Object { $_.Num -eq $op }
+        if ($escolhido) { & $escolhido.Acao; Pause }
+        else { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
+    } while ($true)
+}
+
+function Mostrar-MenuPrincipal {
+    Mostrar-Cabecalho ""
+    Write-Host "   A - Sistema e limpeza        (aparencia, limpeza, inicializacao, disco)" -ForegroundColor Gray
+    Write-Host "   B - Servicos e privacidade   (servicos, tarefas agendadas, bloatware)" -ForegroundColor Gray
+    Write-Host "   C - Performance e jogos      (maxima performance, ajustes Windows 11)" -ForegroundColor Gray
+    Write-Host "   D - Rede                     (DNS, throttling)" -ForegroundColor Gray
+    Write-Host "   P - PERFIS PRONTOS           (Gamer / Escritorio / Servidor)" -ForegroundColor Green
+    Write-Host "   M - Diagnostico e manutencao (diagnostico, comparar, restaurar)" -ForegroundColor Gray
+    Write-Host "   T - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "   0 - Sair" -ForegroundColor Gray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
     Write-Host "   Aplicadas: $Global:Aplicadas  |  Puladas: $Global:Puladas" -ForegroundColor DarkGray
     Write-Host ""
 }
 
+function Aplicar-Tudo {
+    Ponto-Restauracao
+    Secao-Diagnostico
+    Secao-Aparencia
+    Secao-Limpeza
+    Secao-Startup
+    Secao-Servicos
+    Secao-Tarefas
+    Secao-Bloatware
+    Secao-Disco
+    Secao-Rede
+    Secao-Performance
+    Secao-Windows11
+    Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
+    Secao-Comparar
+    Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
+}
+
+function Menu-Perfis {
+    Mostrar-Cabecalho "Perfis prontos"
+    Write-Host "   Aplica direto (uma confirmacao geral) a lista certa de otimizacoes" -ForegroundColor Gray
+    Write-Host "   pro uso escolhido, sem perguntar item a item." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "   1 - Gamer       (responsividade/FPS: performance maxima, DNS rapido, mantem Xbox)" -ForegroundColor Gray
+    Write-Host "   2 - Escritorio  (produtividade: seguro e conservador, menu classico, mantem Teams)" -ForegroundColor Gray
+    Write-Host "   3 - Servidor    (throughput/estabilidade: prioriza servicos, sem UI)" -ForegroundColor Gray
+    Write-Host "   0 - Voltar ao menu principal" -ForegroundColor Gray
+    Write-Host ""
+    $op = Read-Host "  Escolha uma opcao"
+    switch ($op) {
+        "1" { if (Perguntar "Aplicar o perfil GAMER agora") { Aplicar-Perfil "Gamer" }; Pause }
+        "2" { if (Perguntar "Aplicar o perfil ESCRITORIO agora") { Aplicar-Perfil "Escritorio" }; Pause }
+        "3" { if (Perguntar "Aplicar o perfil SERVIDOR agora") { Aplicar-Perfil "Servidor" }; Pause }
+        "0" { return }
+        default { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
+    }
+}
+
 # ======================================================================
 #  LOOP
 # ======================================================================
 do {
-    Mostrar-Menu
+    Mostrar-MenuPrincipal
     $op = Read-Host "  Escolha uma opcao"
-    switch ($op) {
-        "1" { Secao-Aparencia; Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }; Pause }
-        "2" { Secao-Limpeza; Pause }
-        "3" { Secao-Startup; Pause }
-        "4" { Secao-Servicos; Pause }
-        "5" { Secao-Tarefas; Pause }
-        "6" { Secao-Bloatware; Pause }
-        "7" { Secao-Disco; Pause }
-        "8" { Secao-Rede; Pause }
-        "9" { Secao-Performance; Pause }
-        "10" { Secao-Windows11; Pause }
-        "11" { Secao-Comparar; Pause }
-        "12" {
-            Ponto-Restauracao
-            Secao-Diagnostico
-            Secao-Aparencia
-            Secao-Limpeza
-            Secao-Startup
-            Secao-Servicos
-            Secao-Tarefas
-            Secao-Bloatware
-            Secao-Disco
-            Secao-Rede
-            Secao-Performance
-            Secao-Windows11
-            Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
-            Secao-Comparar
-            Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
-            Pause
+    switch ($op.ToUpper()) {
+        "A" {
+            Mostrar-Submenu "Sistema e limpeza" @(
+                @{Num="1"; Rotulo="Aparencia / efeitos visuais"; Acao={ Secao-Aparencia; Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer } }},
+                @{Num="2"; Rotulo="Limpeza (temporarios + lixeira)"; Acao={ Secao-Limpeza }},
+                @{Num="3"; Rotulo="Programas de inicializacao (startup)"; Acao={ Secao-Startup }},
+                @{Num="7"; Rotulo="Otimizar disco (HD/SSD automatico)"; Acao={ Secao-Disco }}
+            )
         }
-        "13" { Secao-Restaurar; Pause }
-        "14" { Secao-Diagnostico; Pause }
+        "B" {
+            Mostrar-Submenu "Servicos e privacidade" @(
+                @{Num="4"; Rotulo="Servicos / processos em segundo plano"; Acao={ Secao-Servicos }},
+                @{Num="5"; Rotulo="Tarefas agendadas (telemetria)"; Acao={ Secao-Tarefas }},
+                @{Num="6"; Rotulo="Remover apps inuteis (Candy Crush, etc.)"; Acao={ Secao-Bloatware }}
+            )
+        }
+        "C" {
+            Mostrar-Submenu "Performance e jogos" @(
+                @{Num="9"; Rotulo="Maxima performance (CPU + sistema, monitoring-safe)"; Acao={ Secao-Performance }},
+                @{Num="10"; Rotulo=("Ajustes do Windows 11 (menu classico, widgets, Teams){0}" -f $(if (-not $Global:Win11) { "  [seu PC: $Global:NomeSO]" } else { "" })); Acao={ Secao-Windows11 }}
+            )
+        }
+        "D" {
+            Mostrar-Submenu "Rede" @(
+                @{Num="8"; Rotulo="Ajustes de rede (DNS rapido + throttling)"; Acao={ Secao-Rede }}
+            )
+        }
+        "P" { Menu-Perfis }
+        "M" {
+            Mostrar-Submenu "Diagnostico e manutencao" @(
+                @{Num="14"; Rotulo="Diagnostico e saude do sistema (disco/RAM + SFC/DISM)"; Acao={ Secao-Diagnostico }},
+                @{Num="11"; Rotulo="Ver melhora de desempenho (antes x depois)"; Acao={ Secao-Comparar }},
+                @{Num="13"; Rotulo="RESTAURAR (desfazer servicos + inicializacao + registro)"; Acao={ Secao-Restaurar }}
+            )
+        }
+        "T" { Aplicar-Tudo; Pause }
         "0" { Write-Host "  Saindo..." -ForegroundColor Gray }
         default { Write-Host "  Opcao invalida." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
