@@ -116,8 +116,12 @@ sem perguntar Y/N em cada item:
   **serviços em segundo plano** (não pro "app em foco", que não existe em uso
   normal de servidor), núcleos/turbo liberados, sem UI desnecessária.
 
-Na versão **gráfica**, os botões "Perfil Gamer/Escritório/Servidor" só marcam
-as caixinhas certas — você ainda revisa e clica em "Aplicar selecionados".
+Na versão **gráfica** os botões funcionam diferente: em vez de aplicar direto,
+cada botão "Perfil Gamer/Escritório/Servidor" marca **só as caixinhas exclusivas
+daquele perfil** (ex.: Gamer marca só os itens de Máxima Performance + DNS
+rápido — não mexe em limpeza/serviços seguros/bloatware, que ficam pra você
+marcar à parte se quiser). Você revisa o que ficou marcado e clica em "Aplicar
+selecionados" quando quiser.
 
 ## O que cada seção faz
 
@@ -249,10 +253,12 @@ Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
 - **v1.4.0** — **menu reorganizado em categorias** (Sistema, Serviços, Performance,
   Rede, Diagnóstico) na versão de terminal — as 14 seções continuam as mesmas, só
   a navegação virou 2 níveis. E os **Perfis Prontos** (Gamer/Escritório/Servidor):
-  aplica de uma vez a lista certa de otimizações pro uso escolhido, sem perguntar
-  item a item (na versão gráfica, só pré-marca as caixinhas certas). Inclui um
-  ajuste novo específico pra servidor (prioridade pros serviços em 2º plano, em
-  vez de pro app em foco).
+  na versão de terminal aplica de uma vez a lista certa de otimizações pro uso
+  escolhido, sem perguntar item a item; na versão **gráfica** cada botão marca só
+  as caixinhas **exclusivas** daquele perfil (a base comum de limpeza/serviços
+  seguros/bloatware fica de fora — é pra marcar à parte se quiser), e você revisa
+  antes de clicar em "Aplicar selecionados". Inclui um ajuste novo específico pra
+  servidor (prioridade pros serviços em 2º plano, em vez de pro app em foco).
 - **v1.3.0** — **detecção adaptativa de perfil da máquina** nas duas versões: o script
   agora identifica notebook x desktop (bateria/tipo de chassi), GPU dedicada x
   integrada e uso de Xbox (controle detectado), e usa isso pra **recomendar (com
