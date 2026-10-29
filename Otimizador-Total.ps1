@@ -20,6 +20,8 @@
       12 - APLICAR TUDO (passa por todas as secoes)
       13 - RESTAURAR (servicos + inicializacao + registro)
       14 - Diagnostico e saude do sistema (disco/RAM + SFC/DISM)
+      15 - Relatorio de hardware (pagina HTML p/ entregar ao cliente)
+      16 - Limpeza avancada (Windows Update, WinSxS, dumps, navegadores)
       0  - Sair
 
     Cada mudanca pergunta Y (sim) / N (nao). Backups sao salvos para
@@ -366,6 +368,467 @@ function Titulo-Secao {
 }
 
 # ======================================================================
+#  FERRAMENTAS: LIMPEZA AVANCADA + RELATORIO DE HARDWARE
+#  (bloco IGUAL nas duas versoes - menu e GUI - pra manter paridade)
+# ======================================================================
+
+# ---- Helpers de tamanho/limpeza ----
+function Formatar-Tamanho {
+    param([double]$Bytes)
+    if ($Bytes -ge 1GB) { return ("{0:N2} GB" -f ($Bytes / 1GB)) }
+    return ("{0:N1} MB" -f ($Bytes / 1MB))
+}
+
+# Soma o tamanho de tudo que casa com os caminhos (aceita curinga, ex.: "C:\pasta\*").
+function Medir-Bytes {
+    param([string[]]$Caminhos)
+    $total = 0
+    foreach ($c in $Caminhos) {
+        foreach ($item in @(Get-Item -Path $c -Force -ErrorAction SilentlyContinue)) {
+            if ($item.PSIsContainer) {
+                $s = (Get-ChildItem -LiteralPath $item.FullName -Recurse -Force -File -ErrorAction SilentlyContinue |
+                    Measure-Object -Property Length -Sum).Sum
+            } else { $s = $item.Length }
+            if ($s) { $total += $s }
+        }
+    }
+    return [double]$total
+}
+
+# Apaga o que casa com os caminhos e devolve quantos bytes REALMENTE sairam
+# (mede antes e depois: arquivo em uso que nao pode ser apagado nao conta).
+function Limpar-Caminhos {
+    param([string[]]$Caminhos)
+    $antes = Medir-Bytes $Caminhos
+    foreach ($c in $Caminhos) { Remove-Item -Path $c -Recurse -Force -ErrorAction SilentlyContinue }
+    $depois = Medir-Bytes $Caminhos
+    return [math]::Max(0, $antes - $depois)
+}
+
+function Obter-EspacoLivre {
+    try { return [double](Get-PSDrive -Name $env:SystemDrive.TrimEnd(':') -ErrorAction Stop).Free } catch { return [double]0 }
+}
+
+# ---- Limpeza avancada ----
+# Instaladores de atualizacoes JA aplicadas. O Windows baixa de novo se precisar.
+function Limpar-CacheWindowsUpdate {
+    $servicos = @("wuauserv","bits")
+    $estavamRodando = @($servicos | Where-Object { (Get-Service $_ -ErrorAction SilentlyContinue).Status -eq "Running" })
+    foreach ($s in $servicos) { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
+    try {
+        $liberado = Limpar-Caminhos @("$env:WINDIR\SoftwareDistribution\Download\*")
+    } finally {
+        foreach ($s in $estavamRodando) { Start-Service -Name $s -ErrorAction SilentlyContinue }
+    }
+    return "cache do Windows Update limpo, ~$(Formatar-Tamanho $liberado) liberados"
+}
+
+# Cache da Otimizacao de Entrega (atualizacoes compartilhadas entre PCs) +
+# cache de miniaturas/icones do Explorer (o Windows recria sozinho).
+function Limpar-CachesSistema {
+    $partes = @()
+    $doPasta = "$env:WINDIR\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\*"
+    if (Get-Command Delete-DeliveryOptimizationCache -ErrorAction SilentlyContinue) {
+        $antes = Medir-Bytes @($doPasta)
+        Delete-DeliveryOptimizationCache -Force -ErrorAction SilentlyContinue
+        $partes += "Otimizacao de Entrega ~$(Formatar-Tamanho ([math]::Max(0, $antes - (Medir-Bytes @($doPasta)))))"
+    }
+    $thumbs = Limpar-Caminhos @("$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db",
+                                "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\iconcache_*.db")
+    $partes += "miniaturas/icones ~$(Formatar-Tamanho $thumbs) (os que o Explorer esta usando saem no proximo reinicio)"
+    return ($partes -join "; ")
+}
+
+# Relatorios de erro (WER), dumps de memoria e logs do Windows com mais de 30 dias.
+# Os logs recentes ficam: sao os que servem pra diagnosticar um problema atual.
+function Limpar-LogsEDumps {
+    $alvos = @(
+        "$env:ProgramData\Microsoft\Windows\WER\ReportArchive\*",
+        "$env:ProgramData\Microsoft\Windows\WER\ReportQueue\*",
+        "$env:LOCALAPPDATA\CrashDumps\*",
+        "$env:WINDIR\Minidump\*",
+        "$env:WINDIR\MEMORY.DMP",
+        "$env:WINDIR\LiveKernelReports\*.dmp"
+    )
+    $liberado = Limpar-Caminhos $alvos
+    $limite = (Get-Date).AddDays(-30)
+    $antigos = @(Get-ChildItem -Path "$env:WINDIR\Logs" -Recurse -Force -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $limite -and $_.Extension -in @(".log",".cab",".etl",".txt") })
+    foreach ($f in $antigos) {
+        try { $tam = $f.Length; Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop; $liberado += $tam } catch { }
+    }
+    return "relatorios de erro, dumps e logs com +30 dias apagados, ~$(Formatar-Tamanho $liberado) liberados"
+}
+
+# So o CACHE dos navegadores (copias de imagens/scripts de sites). Historico,
+# senhas, cookies, favoritos e abas NAO sao tocados. Navegador aberto e pulado,
+# porque ele trava os arquivos e recria o cache na hora.
+function Limpar-CacheNavegadores {
+    $navegadores = @(
+        @{ Nome = "Chrome";  Processo = "chrome";  Base = "$env:LOCALAPPDATA\Google\Chrome\User Data";                Pastas = @("Cache","Code Cache","GPUCache") },
+        @{ Nome = "Edge";    Processo = "msedge";  Base = "$env:LOCALAPPDATA\Microsoft\Edge\User Data";               Pastas = @("Cache","Code Cache","GPUCache") },
+        @{ Nome = "Brave";   Processo = "brave";   Base = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data"; Pastas = @("Cache","Code Cache","GPUCache") },
+        @{ Nome = "Firefox"; Processo = "firefox"; Base = "$env:LOCALAPPDATA\Mozilla\Firefox\Profiles";               Pastas = @("cache2","startupCache") }
+    )
+    $partes = @(); $total = 0
+    foreach ($n in $navegadores) {
+        if (-not (Test-Path $n.Base)) { continue }
+        if (Get-Process -Name $n.Processo -ErrorAction SilentlyContinue) {
+            $partes += "$($n.Nome) esta aberto - feche e rode de novo"
+            continue
+        }
+        # "\*\" = cada perfil do navegador (Default, Profile 1, ...)
+        $caminhos = @($n.Pastas | ForEach-Object { "$($n.Base)\*\$_\*" })
+        $lib = Limpar-Caminhos $caminhos
+        $total += $lib
+        $partes += "$($n.Nome) ~$(Formatar-Tamanho $lib)"
+    }
+    if ($partes.Count -eq 0) { return "nenhum navegador conhecido encontrado (Chrome/Edge/Brave/Firefox)" }
+    return ("total ~{0}: {1}" -f (Formatar-Tamanho $total), ($partes -join "; "))
+}
+
+# Componentes antigos do Windows (WinSxS). SEM /ResetBase de proposito: as
+# atualizacoes instaladas continuam podendo ser desinstaladas depois.
+function Limpar-ComponentesWindows {
+    $antes = Obter-EspacoLivre
+    DISM /Online /Cleanup-Image /StartComponentCleanup | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "DISM StartComponentCleanup terminou com codigo $LASTEXITCODE" }
+    $ganho = [math]::Max(0, (Obter-EspacoLivre) - $antes)
+    return "componentes antigos do Windows limpos, ~$(Formatar-Tamanho $ganho) liberados"
+}
+
+# So LISTA os maiores arquivos da pasta do usuario (Desktop, Downloads,
+# Documentos, Videos...). Nao apaga nada: quem decide e a pessoa.
+# Sem -Force de proposito: pastas ocultas (AppData) sao dados de programas.
+function Listar-MaioresArquivos {
+    param([string]$Raiz = $env:USERPROFILE,[int]$Quantos = 15,[long]$MinimoBytes = 100MB)
+    return @(Get-ChildItem -LiteralPath $Raiz -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Length -ge $MinimoBytes } |
+        Sort-Object Length -Descending | Select-Object -First $Quantos)
+}
+
+# ---- Relatorio de hardware (HTML) ----
+function Rel-Escapar { param($Texto) return [System.Net.WebUtility]::HtmlEncode([string]$Texto) }
+
+# Tabela com cabecalho. $Linhas = lista de [ordered]@{ Coluna = valor }; a chave
+# opcional "_classe" (ok/aviso/erro) pinta a linha. $NotaHtml vai cru (ja escapado).
+function Rel-Tabela {
+    param([string]$Titulo,$Linhas,[string]$Vazio = "Nada encontrado.",[string]$NotaHtml = "")
+    $Linhas = @($Linhas | Where-Object { $_ })
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("<section><h2>$(Rel-Escapar $Titulo)</h2>")
+    if ($Linhas.Count -eq 0) {
+        [void]$sb.Append("<p class='vazio'>$(Rel-Escapar $Vazio)</p>")
+    } else {
+        $colunas = @($Linhas[0].Keys | Where-Object { $_ -ne "_classe" })
+        [void]$sb.Append("<table><thead><tr>")
+        foreach ($c in $colunas) { [void]$sb.Append("<th>$(Rel-Escapar $c)</th>") }
+        [void]$sb.Append("</tr></thead><tbody>")
+        foreach ($l in $Linhas) {
+            $cls = if ($l.Contains("_classe") -and $l["_classe"]) { " class='$($l["_classe"])'" } else { "" }
+            [void]$sb.Append("<tr$cls>")
+            foreach ($c in $colunas) { [void]$sb.Append("<td>$(Rel-Escapar $l[$c])</td>") }
+            [void]$sb.Append("</tr>")
+        }
+        [void]$sb.Append("</tbody></table>")
+    }
+    if ($NotaHtml) { [void]$sb.Append("<p class='nota'>$NotaHtml</p>") }
+    [void]$sb.Append("</section>")
+    return $sb.ToString()
+}
+
+# Tabela de 2 colunas (rotulo -> valor) a partir de um [ordered]@{}.
+function Rel-Pares {
+    param([string]$Titulo,$Pares,[string]$NotaHtml = "")
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("<section><h2>$(Rel-Escapar $Titulo)</h2><table class='pares'><tbody>")
+    foreach ($k in $Pares.Keys) { [void]$sb.Append("<tr><th>$(Rel-Escapar $k)</th><td>$(Rel-Escapar $Pares[$k])</td></tr>") }
+    [void]$sb.Append("</tbody></table>")
+    if ($NotaHtml) { [void]$sb.Append("<p class='nota'>$NotaHtml</p>") }
+    [void]$sb.Append("</section>")
+    return $sb.ToString()
+}
+
+function Rel-Data { param($Data) if ($Data) { try { return ([datetime]$Data).ToString("dd/MM/yyyy") } catch { } }; return "-" }
+
+# Coleta tudo (so LEITURA) e salva um HTML na Area de Trabalho. Cada bloco tem
+# seu proprio try: se uma informacao nao puder ser lida, o resto do relatorio sai.
+# Devolve @{ Arquivo; Alertas } - os alertas tambem aparecem no topo da pagina.
+function Gerar-RelatorioHardware {
+    $agora = Get-Date
+    $pasta = [Environment]::GetFolderPath('Desktop')
+    if ([string]::IsNullOrWhiteSpace($pasta) -or -not (Test-Path $pasta)) { $pasta = $PastaScript }
+    $carimbo = $agora.ToString("yyyy-MM-dd_HHmmss")
+    $arq = Join-Path $pasta ("relatorio-hardware_{0}_{1}.html" -f $env:COMPUTERNAME, $carimbo)
+    $secoes  = New-Object System.Collections.Generic.List[string]
+    $alertas = New-Object System.Collections.Generic.List[string]
+
+    # --- Sistema ---
+    $os = $null; $cs = $null
+    try { $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop } catch { }
+    try { $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop } catch { }
+    $licenca = "nao foi possivel verificar"
+    try {
+        # ApplicationID fixo = produtos do Windows (exclui Office etc.)
+        $lic = Get-CimInstance SoftwareLicensingProduct -ErrorAction Stop `
+            -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" | Select-Object -First 1
+        if ($lic) {
+            $st = [int]$lic.LicenseStatus
+            $licenca = switch ($st) {
+                0 { "NAO licenciado" } 1 { "Ativado" } 2 { "Periodo de carencia" } 3 { "Periodo de carencia (prorrogado)" }
+                4 { "Carencia - copia nao genuina" } 5 { "Notificacao - NAO ativado" } 6 { "Carencia estendida" }
+                default { "Desconhecido ($st)" }
+            }
+            if ($st -ne 1) { $alertas.Add("Windows nao esta ativado: $licenca.") }
+            $licenca += " - $($lic.Name) (chave terminada em $($lic.PartialProductKey))"
+        }
+    } catch { }
+    $sis = [ordered]@{
+        "Computador" = $env:COMPUTERNAME
+        "Usuario"    = $env:USERNAME
+    }
+    if ($cs) {
+        $sis["Fabricante / modelo"] = "$($cs.Manufacturer) $($cs.Model)".Trim()
+        $sis["Dominio (AD)"] = if ($cs.PartOfDomain) { "SIM - $($cs.Domain)" } else { "NAO (grupo de trabalho $($cs.Domain))" }
+    }
+    if ($os) {
+        $sis["Sistema"] = "$($os.Caption) - versao $($os.Version) (build $Global:BuildSO), $($os.OSArchitecture)"
+        $sis["Instalado em"] = Rel-Data $os.InstallDate
+        if ($os.LastBootUpTime) {
+            $up = $agora - $os.LastBootUpTime
+            $sis["Ligado ha"] = "{0} dia(s), {1} h e {2} min" -f $up.Days, $up.Hours, $up.Minutes
+            if ($up.TotalDays -ge 14) { $alertas.Add("PC ligado ha $($up.Days) dias sem reiniciar - reiniciar aplica atualizacoes e libera memoria.") }
+        }
+    }
+    $sis["Ativacao do Windows"] = $licenca
+    $secoes.Add((Rel-Pares "Sistema" $sis))
+
+    # --- Placa-mae / BIOS ---
+    try {
+        $bb   = Get-CimInstance Win32_BaseBoard -ErrorAction Stop | Select-Object -First 1
+        $bios = Get-CimInstance Win32_BIOS -ErrorAction Stop | Select-Object -First 1
+        $secoes.Add((Rel-Pares "Placa-mae e BIOS" ([ordered]@{
+            "Placa-mae"       = "$($bb.Manufacturer) $($bb.Product)".Trim()
+            "BIOS / UEFI"     = "$($bios.Manufacturer) $($bios.SMBIOSBIOSVersion) - de $(Rel-Data $bios.ReleaseDate)"
+            "Numero de serie" = $bios.SerialNumber
+        })))
+    } catch { }
+
+    # --- CPU ---
+    try {
+        $cpus = @(Get-CimInstance Win32_Processor -ErrorAction Stop | ForEach-Object {
+            [ordered]@{
+                "Processador" = ($_.Name -replace '\s+', ' ').Trim()
+                "Nucleos"     = $_.NumberOfCores
+                "Threads"     = $_.NumberOfLogicalProcessors
+                "Clock maximo" = "{0:N2} GHz" -f ($_.MaxClockSpeed / 1000)
+                "Uso agora"   = "$($_.LoadPercentage)%"
+            }
+        })
+        $secoes.Add((Rel-Tabela "Processador" $cpus))
+    } catch { }
+
+    # --- Memoria RAM (pente a pente) ---
+    try {
+        $tiposRam = @{ 20 = "DDR"; 21 = "DDR2"; 24 = "DDR3"; 26 = "DDR4"; 34 = "DDR5"; 35 = "LPDDR5" }
+        $pentes = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
+        $linhasRam = @($pentes | ForEach-Object {
+            $vel = if ($_.ConfiguredClockSpeed) { $_.ConfiguredClockSpeed } else { $_.Speed }
+            $tipo = if ($tiposRam.ContainsKey([int]$_.SMBIOSMemoryType)) { $tiposRam[[int]$_.SMBIOSMemoryType] } else { "-" }
+            [ordered]@{
+                "Slot"       = $_.DeviceLocator
+                "Capacidade" = "{0} GB" -f [math]::Round($_.Capacity / 1GB, 1)
+                "Tipo"       = $tipo
+                "Velocidade" = if ($vel) { "$vel MHz" } else { "-" }
+                "Fabricante" = $_.Manufacturer
+                "Modelo"     = "$($_.PartNumber)".Trim()
+            }
+        })
+        $slots = (Get-CimInstance Win32_PhysicalMemoryArray -ErrorAction SilentlyContinue | Measure-Object -Property MemoryDevices -Sum).Sum
+        $totalGB = [math]::Round((($pentes | Measure-Object -Property Capacity -Sum).Sum) / 1GB, 1)
+        $nota = "Total instalado: $totalGB GB em $($pentes.Count) pente(s)"
+        if ($slots) { $nota += " - $slots slot(s) na placa, $([math]::Max(0, $slots - $pentes.Count)) livre(s) para upgrade" }
+        if ($os) {
+            $livrePct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
+            $nota += ". RAM livre agora: $livrePct%"
+            if ($livrePct -lt 10) { $alertas.Add("RAM quase esgotada agora ($livrePct% livre).") }
+        }
+        if ($totalGB -gt 0 -and $totalGB -lt 8) { $alertas.Add("So $totalGB GB de RAM - para Windows 10/11 o recomendado hoje e 8 GB ou mais.") }
+        $secoes.Add((Rel-Tabela "Memoria RAM" $linhasRam -NotaHtml (Rel-Escapar $nota)))
+    } catch { }
+
+    # --- Placa de video ---
+    try {
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object {
+            $res = if ($_.CurrentHorizontalResolution) { "{0}x{1} @ {2} Hz" -f $_.CurrentHorizontalResolution, $_.CurrentVerticalResolution, $_.CurrentRefreshRate } else { "-" }
+            [ordered]@{
+                "Placa de video" = $_.Name
+                "Driver"         = $_.DriverVersion
+                "Data do driver" = Rel-Data $_.DriverDate
+                "Resolucao"      = $res
+            }
+        })
+        $secoes.Add((Rel-Tabela "Placa de video" $gpus))
+    } catch { }
+
+    # --- Discos fisicos (saude S.M.A.R.T., temperatura, desgaste) ---
+    try {
+        $discos = @(Get-PhysicalDisk -ErrorAction Stop | Sort-Object DeviceId | ForEach-Object {
+            $d = $_
+            $rc = $null
+            try { $rc = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch { }
+            $cls = switch ("$($d.HealthStatus)") { "Healthy" { "ok" } "Warning" { "aviso" } default { "erro" } }
+            if ($cls -ne "ok") { $alertas.Add("Disco '$($d.FriendlyName)' com saude $($d.HealthStatus) - faca BACKUP e avalie a troca.") }
+            $temp = "-"; $desg = "-"; $horas = "-"
+            if ($rc) {
+                if ($rc.Temperature) {
+                    $temp = "$($rc.Temperature) C"
+                    if ($rc.Temperature -ge 60) { $alertas.Add("Disco '$($d.FriendlyName)' quente ($($rc.Temperature) C)."); if ($cls -eq "ok") { $cls = "aviso" } }
+                }
+                if ($null -ne $rc.Wear) {
+                    $desg = "$($rc.Wear)%"
+                    if ($rc.Wear -ge 80) { $alertas.Add("SSD '$($d.FriendlyName)' com $($rc.Wear)% de desgaste - perto do fim da vida util."); if ($cls -eq "ok") { $cls = "aviso" } }
+                }
+                if ($rc.PowerOnHours) { $horas = "{0:N0} h" -f $rc.PowerOnHours }
+            }
+            [ordered]@{
+                "_classe"    = $cls
+                "Disco"      = $d.FriendlyName
+                "Tipo"       = "$($d.MediaType)"
+                "Conexao"    = "$($d.BusType)"
+                "Tamanho"    = "{0:N0} GB" -f ($d.Size / 1GB)
+                "Saude"      = "$($d.HealthStatus)"
+                "Temperatura" = $temp
+                "Desgaste"   = $desg
+                "Horas ligado" = $horas
+            }
+        })
+        $secoes.Add((Rel-Tabela "Discos fisicos" $discos -NotaHtml "Temperatura, desgaste e horas dependem do disco/driver informar - &quot;-&quot; = nao informado."))
+    } catch { }
+
+    # --- Particoes / espaco livre ---
+    try {
+        $vols = @(Get-Volume -ErrorAction Stop | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" } | Sort-Object DriveLetter | ForEach-Object {
+            $pct = if ($_.Size -gt 0) { [math]::Round(($_.SizeRemaining / $_.Size) * 100, 1) } else { 0 }
+            $cls = if ($pct -lt 10) { "erro" } elseif ($pct -lt 20) { "aviso" } else { "ok" }
+            if ($pct -lt 10) { $alertas.Add("Unidade $($_.DriveLetter): com pouco espaco ($pct% livre).") }
+            [ordered]@{
+                "_classe" = $cls
+                "Unidade" = "$($_.DriveLetter):"
+                "Nome"    = $_.FileSystemLabel
+                "Formato" = $_.FileSystem
+                "Tamanho" = "{0:N1} GB" -f ($_.Size / 1GB)
+                "Livre"   = "{0:N1} GB" -f ($_.SizeRemaining / 1GB)
+                "% livre" = "$pct%"
+            }
+        })
+        $secoes.Add((Rel-Tabela "Unidades e espaco livre" $vols))
+    } catch { }
+
+    # --- Bateria (so notebook) ---
+    try {
+        $bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($bat) {
+            $parBat = [ordered]@{ "Carga atual" = "$($bat.EstimatedChargeRemaining)%" }
+            $design = (Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData -ErrorAction SilentlyContinue | Select-Object -First 1).DesignedCapacity
+            $cheia  = (Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity -ErrorAction SilentlyContinue | Select-Object -First 1).FullChargedCapacity
+            if ($design -and $cheia) {
+                $saude = [math]::Round(($cheia / $design) * 100, 0)
+                $parBat["Capacidade de fabrica"] = "{0:N0} mWh" -f $design
+                $parBat["Capacidade hoje"]       = "{0:N0} mWh" -f $cheia
+                $parBat["Saude da bateria"]      = "$saude%"
+                if ($saude -lt 60) { $alertas.Add("Bateria com $saude% da capacidade original - considere trocar.") }
+            }
+            # Relatorio oficial do Windows (historico de ciclos/uso), salvo ao lado.
+            $arqBat = Join-Path $pasta ("relatorio-bateria_{0}_{1}.html" -f $env:COMPUTERNAME, $carimbo)
+            powercfg /batteryreport /output "$arqBat" 2>$null | Out-Null
+            $nota = ""
+            if (Test-Path $arqBat) {
+                $nomeBat = Split-Path $arqBat -Leaf
+                $nota = "Historico completo de uso e ciclos: <a href='$(Rel-Escapar $nomeBat)'>$(Rel-Escapar $nomeBat)</a> (gerado pelo powercfg, na mesma pasta)."
+            }
+            $secoes.Add((Rel-Pares "Bateria" $parBat -NotaHtml $nota))
+        }
+    } catch { }
+
+    # --- Rede ---
+    try {
+        $redes = @(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.Status -eq "Up" } | ForEach-Object {
+            $ip = @(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress) -join ", "
+            [ordered]@{
+                "Adaptador"  = $_.Name
+                "Descricao"  = $_.InterfaceDescription
+                "Velocidade" = $_.LinkSpeed
+                "MAC"        = $_.MacAddress
+                "IPv4"       = $ip
+            }
+        })
+        $secoes.Add((Rel-Tabela "Rede (adaptadores conectados)" $redes -Vazio "Nenhum adaptador de rede fisico conectado."))
+    } catch { }
+
+    # --- Dispositivos com problema de driver ---
+    try {
+        $probs = @(Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object { $_.Status -in @("Error","Degraded","Unknown") } | ForEach-Object {
+            [ordered]@{ "_classe" = "erro"; "Dispositivo" = $_.FriendlyName; "Classe" = $_.Class; "Status" = "$($_.Status)"; "ID" = $_.InstanceId }
+        })
+        if ($probs.Count -gt 0) { $alertas.Add("$($probs.Count) dispositivo(s) com problema de driver (veja a tabela 'Drivers com problema').") }
+        $secoes.Add((Rel-Tabela "Drivers com problema" $probs -Vazio "Nenhum - todos os dispositivos estao funcionando."))
+    } catch { }
+
+    # --- Atualizacoes recentes do Windows ---
+    try {
+        $hf = @(Get-HotFix -ErrorAction Stop | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending)
+        if ($hf.Count -gt 0 -and ($agora - $hf[0].InstalledOn).TotalDays -gt 60) {
+            $alertas.Add("Ultima atualizacao do Windows instalada em $(Rel-Data $hf[0].InstalledOn) - mais de 60 dias atras.")
+        }
+        $linhasHf = @($hf | Select-Object -First 8 | ForEach-Object {
+            [ordered]@{ "Atualizacao" = $_.HotFixID; "Tipo" = $_.Description; "Instalada em" = Rel-Data $_.InstalledOn }
+        })
+        $secoes.Add((Rel-Tabela "Atualizacoes recentes do Windows" $linhasHf -Vazio "Nenhuma atualizacao encontrada."))
+    } catch { }
+
+    # --- Monta a pagina ---
+    $blocoAlertas = if ($alertas.Count -gt 0) {
+        "<section class='alertas'><h2>Pontos de atencao ($($alertas.Count))</h2><ul>" +
+            (($alertas | ForEach-Object { "<li>$(Rel-Escapar $_)</li>" }) -join "") + "</ul></section>"
+    } else {
+        "<section class='alertas ok'><h2>Pontos de atencao</h2><p class='semalerta'>Nenhum problema encontrado.</p></section>"
+    }
+    $css = @"
+body{font-family:'Segoe UI',Arial,sans-serif;margin:0;background:#f4f5fa;color:#1e1e2e}
+header{background:#1e1e2e;color:#fff;padding:22px 32px}
+header h1{margin:0;font-size:22px}
+header p{margin:4px 0 0;color:#aaaac0;font-size:13px}
+main{padding:8px 32px 24px;max-width:1100px}
+section{background:#fff;border-radius:10px;padding:14px 18px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+h2{font-size:14px;margin:0 0 10px;color:#6c5ce7;text-transform:uppercase;letter-spacing:.5px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #ececf3;vertical-align:top}
+thead th{background:#f0effa;color:#444}
+table.pares th{width:220px;color:#555;font-weight:600}
+tr.aviso td{background:#fff8e1}
+tr.erro td{background:#fdecea}
+.alertas{border-left:5px solid #f1c40f}
+.alertas.ok{border-left-color:#2ecc71}
+.alertas li{margin:3px 0}
+.semalerta{color:#1e8e5a;font-weight:600;margin:0}
+.nota,.vazio{color:#777;font-size:12px;margin:8px 0 0}
+footer{color:#888;font-size:12px;padding:0 32px 24px}
+@media print{body{background:#fff}section{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}
+"@
+    $html = @(
+        "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>",
+        "<title>Relatorio de hardware - $(Rel-Escapar $env:COMPUTERNAME)</title><style>$css</style></head><body>",
+        "<header><h1>Relatorio de hardware - $(Rel-Escapar $env:COMPUTERNAME)</h1>",
+        "<p>Gerado em $($agora.ToString('dd/MM/yyyy HH:mm')) pelo Otimizador Total - so leitura, nada foi alterado no PC.</p></header>",
+        "<main>$blocoAlertas$($secoes -join '')</main>",
+        "<footer>Otimizador Total - github.com/AlexandreAlan/script-windows-desempenho</footer></body></html>"
+    ) -join "`n"
+    Set-Content -Path $arq -Value $html -Encoding UTF8
+    return [PSCustomObject]@{ Arquivo = $arq; Alertas = @($alertas) }
+}
+
+# ======================================================================
 #  SECAO 1 - APARENCIA / EFEITOS VISUAIS
 # ======================================================================
 function Secao-Aparencia {
@@ -688,6 +1151,87 @@ function Secao-Rede {
     Item "Limpar cache de DNS agora" "Resolve sites que ficaram 'presos' no cache antigo." {
         Clear-DnsClientCache -ErrorAction SilentlyContinue
         ipconfig /flushdns | Out-Null
+    }
+}
+
+# ======================================================================
+#  SECAO 15 - RELATORIO DE HARDWARE (HTML)
+# ======================================================================
+function Secao-RelatorioHardware {
+    Titulo-Secao "15) RELATORIO DE HARDWARE (pagina HTML)"
+    Write-Host "  Gera uma pagina com CPU, RAM (pente a pente), discos (saude/temperatura/desgaste)," -ForegroundColor Gray
+    Write-Host "  GPU, bateria, rede, ativacao do Windows, drivers com problema e atualizacoes." -ForegroundColor Gray
+    Write-Host "  So le informacoes - nao altera nada. Bom pra entregar ao cliente." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "   Coletando informacoes (pode levar alguns segundos)..." -ForegroundColor DarkGray
+    try {
+        $r = Gerar-RelatorioHardware
+        Write-Host "   [OK] Relatorio salvo em: $($r.Arquivo)" -ForegroundColor Green
+        Add-Log "OK" "Relatorio de hardware gerado: $($r.Arquivo)"
+        $Global:Aplicadas++
+        if ($r.Alertas.Count -gt 0) {
+            Write-Host ""
+            Write-Host "  >>> PONTOS DE ATENCAO <<<" -ForegroundColor Yellow
+            foreach ($a in $r.Alertas) { Write-Host "   - $a" -ForegroundColor Yellow; Add-Log "AVISO" $a }
+        } else {
+            Write-Host "   Nenhum ponto de atencao encontrado." -ForegroundColor Green
+        }
+        Write-Host ""
+        if (Perguntar "Abrir o relatorio no navegador agora?") { Start-Process $r.Arquivo }
+    } catch {
+        Write-Host "   [AVISO] Nao foi possivel gerar o relatorio: $($_.Exception.Message)" -ForegroundColor Yellow
+        Add-Log "ERRO" "Relatorio de hardware  ->  $($_.Exception.Message)"
+    }
+}
+
+# ======================================================================
+#  SECAO 16 - LIMPEZA AVANCADA
+# ======================================================================
+function Secao-LimpezaAvancada {
+    Titulo-Secao "16) LIMPEZA AVANCADA (libera mais espaco em disco)"
+    Write-Host "  Vai alem da limpeza basica (opcao 2). Nao apaga documentos, fotos nem senhas." -ForegroundColor Gray
+    $livreAntes = Obter-EspacoLivre
+
+    Item "Limpar cache do Windows Update" `
+        "Instaladores de atualizacoes ja aplicadas. Perde: nada (o Windows baixa de novo se precisar)." {
+        Write-Host "   $(Limpar-CacheWindowsUpdate)" -ForegroundColor Green
+    }
+    Item "Limpar cache de miniaturas e da Otimizacao de Entrega" `
+        "Perde: nada - as miniaturas de fotos/videos sao recriadas quando voce abrir a pasta." {
+        Write-Host "   $(Limpar-CachesSistema)" -ForegroundColor Green
+    }
+    Item "Apagar relatorios de erro, dumps de memoria e logs com +30 dias" `
+        "Perde: arquivos usados pra investigar telas azuis/travamentos ANTIGOS (os logs recentes ficam)." {
+        Write-Host "   $(Limpar-LogsEDumps)" -ForegroundColor Green
+    }
+    Item "Limpar cache dos navegadores (Chrome, Edge, Brave, Firefox)" `
+        "So o cache - historico, senhas, cookies e abas NAO sao apagados. Feche os navegadores antes." {
+        Write-Host "   $(Limpar-CacheNavegadores)" -ForegroundColor Green
+    }
+    Item "Limpar componentes antigos do Windows (DISM /StartComponentCleanup)" `
+        "Pode demorar varios minutos. As atualizacoes instaladas continuam podendo ser desinstaladas." {
+        Write-Host "   $(Limpar-ComponentesWindows)" -ForegroundColor Green
+    }
+
+    $ganho = [math]::Max(0, (Obter-EspacoLivre) - $livreAntes)
+    Write-Host ""
+    Write-Host "   Espaco livre no disco $($env:SystemDrive) aumentou ~$(Formatar-Tamanho $ganho)." -ForegroundColor Cyan
+    Add-Log "INFO" "Limpeza avancada: ~$(Formatar-Tamanho $ganho) liberados no $($env:SystemDrive)"
+
+    Write-Host ""
+    Write-Host ("-" * 64) -ForegroundColor DarkCyan
+    Write-Host "  Maiores arquivos da sua pasta de usuario (Desktop, Downloads, Documentos...)" -ForegroundColor Cyan
+    Write-Host "  So MOSTRA (acima de 100 MB) - nao apaga nada. Voce decide o que fazer." -ForegroundColor Gray
+    if (Perguntar "Procurar os maiores arquivos agora?") {
+        Write-Host "   Procurando (pode levar um pouco em pastas grandes)..." -ForegroundColor DarkGray
+        $grandes = Listar-MaioresArquivos
+        if ($grandes.Count -eq 0) {
+            Write-Host "   Nenhum arquivo acima de 100 MB na sua pasta de usuario." -ForegroundColor Green
+        } else {
+            foreach ($f in $grandes) {
+                Write-Host ("   {0,10}  {1}" -f (Formatar-Tamanho $f.Length), $f.FullName) -ForegroundColor Gray
+            }
+        }
     }
 }
 
@@ -1209,12 +1753,12 @@ function Mostrar-Submenu {
 
 function Mostrar-MenuPrincipal {
     Mostrar-Cabecalho ""
-    Write-Host "   A - Sistema e limpeza        (aparencia, limpeza, inicializacao, disco)" -ForegroundColor Gray
+    Write-Host "   A - Sistema e limpeza        (aparencia, limpeza, limpeza avancada, inicializacao, disco)" -ForegroundColor Gray
     Write-Host "   B - Servicos e privacidade   (servicos, tarefas agendadas, bloatware)" -ForegroundColor Gray
     Write-Host "   C - Performance e jogos      (maxima performance, ajustes Windows 11)" -ForegroundColor Gray
     Write-Host "   D - Rede                     (DNS, throttling)" -ForegroundColor Gray
     Write-Host "   P - PERFIS PRONTOS           (Gamer / Escritorio / Servidor)" -ForegroundColor Green
-    Write-Host "   M - Diagnostico e manutencao (diagnostico, comparar, restaurar)" -ForegroundColor Gray
+    Write-Host "   M - Diagnostico e manutencao (diagnostico, relatorio de hardware, comparar, restaurar)" -ForegroundColor Gray
     Write-Host "   T - APLICAR TUDO (passa por todas as secoes)" -ForegroundColor Green
     Write-Host "   0 - Sair" -ForegroundColor Gray
     Write-Host "  ==============================================================" -ForegroundColor Magenta
@@ -1227,6 +1771,7 @@ function Aplicar-Tudo {
     Secao-Diagnostico
     Secao-Aparencia
     Secao-Limpeza
+    Secao-LimpezaAvancada
     Secao-Startup
     Secao-Servicos
     Secao-Tarefas
@@ -1237,6 +1782,7 @@ function Aplicar-Tudo {
     Secao-Windows11
     Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer }
     Secao-Comparar
+    Secao-RelatorioHardware
     Titulo-Secao "TUDO PROCESSADO - recomendado REINICIAR o PC"
 }
 
@@ -1271,6 +1817,7 @@ do {
             Mostrar-Submenu "Sistema e limpeza" @(
                 @{Num="1"; Rotulo="Aparencia / efeitos visuais"; Acao={ Secao-Aparencia; Item "Reiniciar o Explorer para aplicar a aparencia" "" { Reiniciar-Explorer } }},
                 @{Num="2"; Rotulo="Limpeza (temporarios + lixeira)"; Acao={ Secao-Limpeza }},
+                @{Num="16"; Rotulo="Limpeza avancada (Windows Update, WinSxS, dumps, navegadores)"; Acao={ Secao-LimpezaAvancada }},
                 @{Num="3"; Rotulo="Programas de inicializacao (startup)"; Acao={ Secao-Startup }},
                 @{Num="7"; Rotulo="Otimizar disco (HD/SSD automatico)"; Acao={ Secao-Disco }}
             )
@@ -1297,6 +1844,7 @@ do {
         "M" {
             Mostrar-Submenu "Diagnostico e manutencao" @(
                 @{Num="14"; Rotulo="Diagnostico e saude do sistema (disco/RAM + SFC/DISM)"; Acao={ Secao-Diagnostico }},
+                @{Num="15"; Rotulo="Relatorio de hardware (pagina HTML p/ o cliente)"; Acao={ Secao-RelatorioHardware }},
                 @{Num="11"; Rotulo="Ver melhora de desempenho (antes x depois)"; Acao={ Secao-Comparar }},
                 @{Num="13"; Rotulo="RESTAURAR (desfazer servicos + inicializacao + registro)"; Acao={ Secao-Restaurar }}
             )

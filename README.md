@@ -2,287 +2,137 @@
 
 [![Lint PowerShell](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/lint.yml)
 [![Screenshot GUI](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/screenshot.yml/badge.svg)](https://github.com/AlexandreAlan/script-windows-desempenho/actions/workflows/screenshot.yml)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
+![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 
-**Otimizador Total** para **Windows 10 e 11** — deixa o sistema o mais **leve
-e rápido** possível. Disponível em **duas versões**: uma **gráfica (janela
-bonita, recomendada)** e a clássica de **menu no terminal**. Cada mudança
-pergunta antes de aplicar, tudo é **reversível**, e a versão de menu detecta o
-sistema automaticamente e libera os **ajustes do Windows 11** quando for o
-caso.
+**Otimizador Total** para **Windows 10 e 11**: deixa o sistema o mais **leve e
+rápido** possível, faz **diagnóstico** e gera um **relatório de hardware** para
+entregar ao cliente. Cada mudança pergunta antes, tudo o que dá para desfazer tem
+**backup**, e o script se adapta à máquina (notebook ou desktop, GPU, Windows 10 ou
+11, domínio AD).
 
-## Versão gráfica (recomendada) 🖥️
+Vem em **duas versões** com as mesmas otimizações: uma **gráfica** (recomendada) e
+uma de **menu no terminal**.
 
 ![Otimizador Total - versão gráfica](docs/screenshot-gui.png)
 
-> Print tirado automaticamente pelo CI (workflow **Screenshot GUI**) a cada
-> mudança na GUI — a janela é aberta de verdade num Windows real, não é
-> montagem. Detecta o Windows 10/11 sozinha (no print acima, rodou num
-> Windows 11 e mostrou certinho).
+> Print tirado automaticamente pelo CI (workflow **Screenshot GUI**): a janela é
+> aberta de verdade num Windows real, não é montagem.
 
-Uma **janela** com tema escuro onde cada otimização aparece como um item
-**colorido por risco**, indicando o que é bom desativar ou não:
+## 🚀 Como usar
 
-- 🟢 **Verde — SEGURO:** pode desativar tranquilo (telemetria, SysMain, Fax…).
-- 🟡 **Amarelo — CUIDADO:** só se você **não usar** aquele recurso (Xbox,
-  geolocalização, teclado de toque…).
-- 🔴 **Vermelho — RISCO:** só desative se souber o que faz (Spooler de
-  impressão, Windows Search).
+### Versão gráfica (recomendada)
 
-Marque os itens que quiser (os recomendados já vêm marcados), clique em
-**Aplicar selecionados** e acompanhe o log. Tem botões para **marcar
-recomendados**, **criar ponto de restauração**, **restaurar (desfazer)** e um
-**painel de desempenho ao vivo** (RAM, processos, serviços) no topo.
+1. Baixe o projeto: **Code → Download ZIP** e extraia.
+2. Dê **duplo-clique em `Otimizador-GUI.bat`** e aceite o aviso (UAC).
+3. Marque os itens (os recomendados para o seu PC já vêm marcados) e clique em
+   **Aplicar selecionados**.
 
-> 👉 Dê **duplo-clique em `Otimizador-GUI.bat`** e aceite o aviso (UAC).
+Cada item tem a cor do risco: 🟢 **seguro** · 🟡 **cuidado** (só se você não usa) ·
+🔴 **risco** (só se souber o que faz).
+
+### Versão de menu
+
+Dê **duplo-clique em `Otimizador-Total.bat`**, aceite o UAC, escolha a categoria e
+responda **Y** ou **N** em cada item.
 
 ## ⚡ Rodar a versão de menu direto (sem baixar nada)
 
-**Jeito mais rápido** para a versão de menu — abra o **PowerShell** (menu
-Iniciar → digite *PowerShell*) e cole **uma linha**. Ela baixa o script pro
-`%TEMP%` e abre **já como Administrador** (vai aparecer o aviso do UAC,
-clique **Sim**):
+Abra o **PowerShell** (menu Iniciar → digite *PowerShell*) e cole **uma linha**. Ela
+baixa o script para o `%TEMP%` e abre **já como Administrador** (vai aparecer o aviso
+do UAC, clique **Sim**):
 
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol='Tls12'; $f="$env:TEMP\Otimizador-Total.ps1"; irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 -OutFile $f; Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$f`""
 ```
 
-Se você **já estiver num PowerShell como Administrador**, dá pra rodar ainda mais
-curto (sem abrir outra janela):
+Se você **já estiver num PowerShell como Administrador**, dá para rodar ainda mais
+curto, sem abrir outra janela:
 
 ```powershell
 irm https://raw.githubusercontent.com/AlexandreAlan/script-windows-desempenho/main/Otimizador-Total.ps1 | iex
 ```
 
-> Não instala nada — o script roda na hora e os backups ficam no `%TEMP%`. Para
-> guardar os backups junto do script (e reusar a opção **13 – Restaurar** depois),
-> use o método clássico do `.bat` em **[Como usar](#como-usar)**.
+> Não instala nada: o script roda na hora e os backups ficam no `%TEMP%`. Para
+> guardar os backups junto do script (e usar a opção **13 – Restaurar** depois),
+> use o `.bat`.
+
+## 🧰 O que ele faz
+
+| # | Ferramenta | Resumo |
+|---|---|---|
+| 1 | Aparência | Desliga animações, transparência e sombras; plano Alto Desempenho (desktop) |
+| 2 | Limpeza | Temporários, Prefetch, cache e Lixeira |
+| 3 | Inicialização | Escolhe o que abre com o Windows (com backup) |
+| 4 | Serviços | Desativa serviços em 2º plano por nível de risco, mostrando o que você perde |
+| 5 | Tarefas agendadas | Desliga tarefas de telemetria/compatibilidade |
+| 6 | Bloatware | Remove Candy Crush e afins, um por um |
+| 7 | Disco | TRIM no SSD, desfragmentação no HD (detecção automática) |
+| 8 | Rede | DNS rápido (Cloudflare/Google), sem throttling, limpa o cache de DNS |
+| 9 | Máxima performance | Turbo e núcleos liberados sem prender a CPU em 100%; HAGS, Game DVR off |
+| 10 | Windows 11 | Menu de contexto clássico, sem widgets e sem Chat/Teams |
+| 11 | Medir desempenho | Antes × depois: RAM, processos, serviços |
+| 12 | Aplicar tudo | Passa por tudo, item a item, e gera o relatório no fim |
+| 13 | Restaurar | Desfaz serviços, inicialização e registro |
+| 14 | Diagnóstico | Espaço, RAM, S.M.A.R.T., SFC e DISM |
+| 15 | 🆕 **Relatório de hardware** | Página HTML com CPU, RAM pente a pente, discos (saúde/temperatura/desgaste), bateria, ativação, drivers com problema e **pontos de atenção** |
+| 16 | 🆕 **Limpeza avançada** | Cache do Windows Update, WinSxS, dumps/logs antigos, cache dos navegadores e lista dos maiores arquivos |
+| P | Perfis prontos | **Gamer**, **Escritório** ou **Servidor** de uma vez |
+
+Ao sair do menu, o script grava um **relatório de auditoria** (`otimizador-log_<data>.txt`)
+na Área de Trabalho com tudo o que foi feito, que serve como comprovante de serviço.
+
+## 📚 Documentação
+
+| Página | Conteúdo |
+|---|---|
+| [Funcionalidades](docs/funcionalidades.md) | O que cada opção faz, em detalhe, e a navegação do menu |
+| [Relatório de hardware](docs/relatorio-de-hardware.md) | O que entra no relatório e quando ele dá alerta |
+| [Perfis prontos](docs/perfis.md) | Gamer / Escritório / Servidor no menu e na GUI |
+| [Segurança e restauração](docs/seguranca-e-restauracao.md) | Backups, o que é reversível, respeito à GPO/AD |
+| [Perguntas frequentes](docs/faq.md) | SmartScreen, ExecutionPolicy, antivírus, GUI travada... |
+| [Desenvolvimento](docs/desenvolvimento.md) | Estrutura do código, como adicionar otimizações, CI |
+| [Histórico de versões](CHANGELOG.md) | O que mudou em cada versão |
+
+## 🔒 Segurança em resumo
+
+- Nada é aplicado sem confirmação (**Y/N** no menu, caixinha marcada na GUI).
+- **Ponto de restauração** oferecido antes das mudanças grandes.
+- Serviços, inicialização e registro têm **backup** e podem ser revertidos (opção 13).
+- Em máquina de **domínio (AD)**, a área de Política de Grupo **não é tocada**.
+- Erros viram **avisos amarelos** no log, nunca uma tela vermelha.
+
+Detalhes, inclusive o que **não** volta pela opção 13, em
+[Segurança e restauração](docs/seguranca-e-restauracao.md).
 
 ## Arquivos
 
 | Arquivo | Função |
 |---|---|
-| `Otimizador-GUI.ps1` | **Versão gráfica** (janela WPF, recomendada) |
 | `Otimizador-GUI.bat` | Duplo-clique → abre a **janela** como Administrador |
-| `Otimizador-Total.ps1` | Versão de **menu no terminal** (clássica) |
+| `Otimizador-GUI.ps1` | Versão gráfica (WPF) |
 | `Otimizador-Total.bat` | Duplo-clique → abre o **menu** como Administrador |
-
-> Os backups ficam em `backup-servicos.json` (serviços), no registro
-> (inicialização) e em `backup-registro.json` (ajustes de registro) — usados
-> pela opção **13 (Restaurar)** para desfazer. São **compartilhados** pelas
-> duas versões — você pode aplicar na GUI e restaurar no menu, ou vice-versa.
-
-## Como usar
-
-**Versão gráfica:** duplo-clique em `Otimizador-GUI.bat`, aceite o UAC, marque
-os itens e clique em **Aplicar selecionados**.
-
-**Versão de menu:**
-
-1. Dê **duplo-clique em `Otimizador-Total.bat`** e aceite o aviso (UAC).
-2. Escolha uma opção do menu. Em cada item, digite **Y** ou **N**.
-
-## Menu
-
-A versão de menu é organizada em **categorias** — escolha uma letra pra abrir o
-submenu com as opções daquela área (os números de cada opção são os mesmos de
-sempre, só a navegação por cima mudou):
-
-```
-A - Sistema e limpeza        (aparencia, limpeza, inicializacao, disco)
-B - Servicos e privacidade   (servicos, tarefas agendadas, bloatware)
-C - Performance e jogos      (maxima performance, ajustes Windows 11)
-D - Rede                     (DNS, throttling)
-P - PERFIS PRONTOS           (Gamer / Escritorio / Servidor)
-M - Diagnostico e manutencao (diagnostico, comparar, restaurar)
-T - APLICAR TUDO (passa por todas as secoes)
-0 - Sair
-```
-
-### Perfis Prontos (P)
-
-Em vez de passar item por item, aplica de uma vez a lista certa de otimizações
-pro uso escolhido — uma confirmação geral (+ ponto de restauração) e pronto,
-sem perguntar Y/N em cada item:
-
-- **Gamer** — responsividade/FPS: aparência leve, Máxima Performance completa
-  (núcleos liberados, core parking off, turbo 100%, Alto Desempenho — pula
-  automaticamente se detectar notebook, pra não estourar a bateria), prioridade
-  pro app em foco, HAGS (se tiver GPU dedicada), DNS Cloudflare. **Mantém o
-  Xbox ligado.**
-- **Escritório** — produtividade, conservador: limpeza + serviços seguros +
-  bloatware fora, menu de contexto clássico (Windows 11), **mantém o Teams** e
-  não mexe em plano de energia/DNS (pensado pra rede corporativa).
-- **Servidor** — throughput/estabilidade: mesma base segura, prioridade pros
-  **serviços em segundo plano** (não pro "app em foco", que não existe em uso
-  normal de servidor), núcleos/turbo liberados, sem UI desnecessária.
-
-Na versão **gráfica** os botões funcionam diferente: em vez de aplicar direto,
-cada botão "Perfil Gamer/Escritório/Servidor" marca **só as caixinhas exclusivas
-daquele perfil** (ex.: Gamer marca só os itens de Máxima Performance + DNS
-rápido — não mexe em limpeza/serviços seguros/bloatware, que ficam pra você
-marcar à parte se quiser). Você revisa o que ficou marcado e clica em "Aplicar
-selecionados" quando quiser.
-
-## O que cada seção faz
-
-**1) Aparência** — melhor desempenho, sem animações, sem transparência, sem
-sombras, menus instantâneos, plano de energia Alto Desempenho.
-
-**2) Limpeza** — apaga Temp/Prefetch/cache (mostra os MB liberados) e esvazia
-a Lixeira. Não toca nos seus arquivos.
-
-**3) Inicialização** — lista cada programa que abre com o Windows e pergunta se
-quer desativar. Salva backup para reverter.
-
-**4) Serviços** — reduz processos em segundo plano, organizados por risco:
-- **Seguros:** telemetria, SysMain, Fax, modo demo, registro remoto, etc.
-- **Xbox:** desative se não joga via Xbox. **Detecção adaptativa:** o script verifica se há app/controle Xbox instalado nesta máquina e marca "recomendado" ou "não recomendado" com o motivo, em vez de sugerir sempre a mesma coisa.
-- **Cuidado:** Spooler (impressão), Windows Search, geolocalização.
-- **Apps em 2º plano + telemetria** (registro).
-Cada serviço mostra **o que você perde** e salva backup.
-
-**5) Tarefas agendadas** — desativa tarefas conhecidas de coleta de dados e
-compatibilidade.
-
-**6) Remover apps inúteis** — lista bloatware instalado (Candy Crush, jogos
-King, 3D Builder, etc.) e pergunta um por um. Apps essenciais não entram.
-
-**7) Otimizar disco** — detecta se é HD ou SSD: desfragmenta HD comum e faz
-TRIM (limpeza correta) no SSD, sem desfragmentar SSD à toa.
-
-**8) Ajustes de rede** — troca o DNS por um mais rápido (Cloudflare 1.1.1.1 ou
-Google 8.8.8.8, ou volta ao automático), desativa o "network throttling" e
-limpa o cache de DNS.
-
-**9) Máxima performance** — solta o máximo da máquina **sem fixar a CPU em 100%**:
-libera o **turbo total sob carga** (max processor state 100%) e desliga o **core
-parking**, mas **deixa o clock escalar pra baixo quando ocioso** — assim um
-monitoramento (ex.: **Zabbix**) continua enxergando carga e gargalo reais. Garante
-**todos os núcleos no boot** (o jeito certo, via `bcdedit` — o msconfig só *limita*)
-e aplica ajustes de sistema reversíveis: prioridade pro app em foco, **Game DVR**
-off, **HAGS** e startup sem atraso. Oferece **ponto de restauração** antes.
-**Detecção adaptativa:** em **notebook** (detectado por bateria/tipo de chassi), os
-itens de CPU sempre no máximo e o plano "Alto Desempenho" (seção 1) avisam que
-reduzem a autonomia da bateria e não vêm recomendados; em **desktop**, continuam
-recomendados como antes. O **HAGS** avisa se há **GPU dedicada** detectada ou só
-integrada (o ganho tende a ser menor nesse caso).
-
-**10) Ajustes do Windows 11** — só aparece/aplica se o PC for Windows 11
-(detecção automática pelo número do build). Oferece **ponto de restauração**
-antes e inclui: **menu de contexto clássico** (igual ao Win10), **desativar os
-widgets** da barra e **desativar o Chat/Teams** da barra. Em Windows 10, a opção
-avisa que não se aplica.
-
-**11) Medir desempenho** — mostra um comparativo **antes × depois** (RAM em
-uso, RAM livre, número de processos e serviços ativos), com setas indicando o
-que melhorou. O topo do menu também exibe esses números **em tempo real**.
-
-**12) Aplicar tudo** — cria ponto de restauração, passa por todas as seções
-(inclusive os ajustes do W11, quando for o caso) e no final mostra automaticamente
-a comparação de desempenho.
-
-**13) Restaurar** — desfaz **serviços**, **inicialização** e **ajustes de registro**
-(aparência, throttling de rede, menu/widgets/Teams do W11) usando os backups. Ou
-seja, dá pra reverter **tudo** que o script alterou.
-
-**14) Diagnóstico e saúde do sistema** — roda **antes** de otimizar, pra saber se
-algum problema é da máquina e não do script (útil como comprovante em atendimento a
-cliente). Mostra **espaço livre em disco**, **RAM livre** e a **saúde física de cada
-disco** (S.M.A.R.T., via `Get-PhysicalDisk` — Healthy/Warning/Unhealthy), e oferece
-rodar **`SFC /scannow`** (verifica/repara arquivos de sistema) e **`DISM /ScanHealth`
-+ `/RestoreHealth`** (verifica/repara a imagem do Windows, pode baixar arquivos via
-Windows Update). Só lê informações e pergunta antes de cada verificação/reparo — pode
-demorar alguns minutos, por isso **não entra sozinho** na opção 12 (só se você
-confirmar cada passo).
-
-### Relatório de auditoria
-
-Ao **sair** (opção 0), o script gera um **`otimizador-log_<data>.txt` na Área de
-Trabalho** listando tudo que foi feito (aplicado / pulado / com aviso), com data,
-máquina, usuário e sistema. Serve como **comprovante de serviço** — útil pra quem
-usa em manutenção de clientes.
-
-## Segurança
-
-- Tudo pede **Y/N** — nada é aplicado sem você confirmar.
-- As opções 12 (Aplicar Tudo), 10 (Windows 11) e 9 (Máxima performance) oferecem
-  criar um **ponto de restauração** do Windows no início.
-- Serviços, inicialização **e ajustes de registro** têm **backup** e podem ser
-  revertidos pela opção 13 — nada fica sem volta.
-- Falhas (registro bloqueado por GPO, permissão, etc.) viram **aviso amarelo** e
-  vão pro relatório — **não quebram a tela** com erro vermelho.
-- Os reparos da opção 14 (**SFC** e **DISM /RestoreHealth**) mexem em **arquivos de
-  sistema**, não em registro — por isso **não são desfeitos** pela opção 13. Por
-  garantia, a opção 14 também oferece **ponto de restauração** antes.
-
-### Respeita Política de Grupo (GPO / Active Directory)
-
-Serve tanto pra **PC doméstico** quanto pra **máquina profissional** — com ou sem
-**AD**. O script detecta se a máquina está **em domínio** e, nesse caso, **não mexe
-na área de `\Policies\`** do registro (território da GPO): esses ajustes ficam a
-cargo da Política de Grupo e aparecem como **`[GPO]`** pulados no relatório. Mesmo
-fora de domínio, se um valor de política **já estiver definido** (admin/GPO no
-controle), ele é **respeitado** e não é sobrescrito. Em PC doméstico, sem domínio e
-com a chave livre, os ajustes são aplicados normalmente. O status (**em domínio:
-SIM/NÃO**) também sai no relatório de auditoria.
-
-> ⚠️ Não desative serviços essenciais às cegas. Cada item explica o impacto;
-> em caso de dúvida, mantenha (N).
+| `Otimizador-Total.ps1` | Versão de menu no terminal |
 
 ## Requisitos
 
-- Windows 10 ou Windows 11
+- Windows 10 ou Windows 11 (Windows PowerShell 5.1, que já vem no sistema)
 - Executar como **Administrador** (o `.bat` já cuida disso)
 
 ## Auto-hospedar (Docker)
 
-Prefere servir os scripts do seu próprio servidor em vez de depender do
-`raw.githubusercontent.com`? A imagem publicada em
-`ghcr.io/alexandrealan/script-windows-desempenho` serve os quatro arquivos
-(`.ps1` + `.bat`) via nginx:
+Para servir os scripts do seu próprio servidor, em vez de depender do
+`raw.githubusercontent.com`:
 
 ```bash
 docker compose up -d
 ```
 
-Isso sobe um mirror em `http://localhost:8081` — ajuste a porta no
-`docker-compose.yml` conforme necessário.
-
-## Histórico de versões
-
-- **v1.4.0** — **menu reorganizado em categorias** (Sistema, Serviços, Performance,
-  Rede, Diagnóstico) na versão de terminal — as 14 seções continuam as mesmas, só
-  a navegação virou 2 níveis. E os **Perfis Prontos** (Gamer/Escritório/Servidor):
-  na versão de terminal aplica de uma vez a lista certa de otimizações pro uso
-  escolhido, sem perguntar item a item; na versão **gráfica** cada botão marca só
-  as caixinhas **exclusivas** daquele perfil (a base comum de limpeza/serviços
-  seguros/bloatware fica de fora — é pra marcar à parte se quiser), e você revisa
-  antes de clicar em "Aplicar selecionados". Inclui um ajuste novo específico pra
-  servidor (prioridade pros serviços em 2º plano, em vez de pro app em foco).
-- **v1.3.0** — **detecção adaptativa de perfil da máquina** nas duas versões: o script
-  agora identifica notebook x desktop (bateria/tipo de chassi), GPU dedicada x
-  integrada e uso de Xbox (controle detectado), e usa isso pra **recomendar (com
-  motivo) só o que faz sentido pra aquele PC** — em vez da mesma sugestão fixa pra
-  qualquer máquina. Afeta o grupo Xbox (seção 4) e os itens de CPU máximo/Alto
-  Desempenho/HAGS (seção 9). O **Spooler de impressão continua sempre como "não
-  recomendado"** independente de detecção — impressora é recurso essencial demais
-  pra sugerir desativar automaticamente. O perfil detectado aparece no topo do menu
-  e em detalhe na opção 14 (Diagnóstico); nada muda no fluxo de perguntas Y/N nem
-  nos backups/restauração existentes.
-- **v1.2.0** — versão **gráfica** agora detecta **Windows 10/11** automaticamente (título e
-  subtítulo da janela mostram o sistema real, antes ficava fixo em "Windows 10") e ganhou as
-  seções **Máxima Performance** e **Ajustes do Windows 11** (esta última só aparece na lista
-  quando o PC realmente é Windows 11), alcançando paridade com a versão de menu nos itens de
-  otimização. Ajustes de **registro** na GUI ainda não têm backup/restauração própria (diferente
-  da versão de menu) — use o botão "Criar ponto de restauração" antes, ou a versão de menu se
-  precisar de reversão garantida; isso deve ser corrigido numa próxima versão.
-- **v1.1.0** — nova opção **14 (Diagnóstico e saúde do sistema)** nas duas versões:
-  espaço em disco, RAM, saúde física do disco (S.M.A.R.T.) e verificação/reparo de
-  arquivos de sistema (SFC + DISM). Recomendado rodar antes de otimizar.
-- **v1.0.0** — primeira versão estável: menu de terminal completo (13 opções,
-  restauração total) + versão gráfica (WPF), CI de lint (sintaxe +
-  PSScriptAnalyzer) para as duas versões, e mirror Docker auto-hospedável.
+Isso sobe um mirror em `http://localhost:8081` com a imagem
+`ghcr.io/alexandrealan/script-windows-desempenho`. Mais detalhes em
+[Desenvolvimento](docs/desenvolvimento.md#mirror-docker).
 
 ## Licença
 
-[MIT](LICENSE) — use, modifique e redistribua livremente.
+[MIT](LICENSE): use, modifique e redistribua livremente.
